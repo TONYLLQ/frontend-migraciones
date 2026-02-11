@@ -1,24 +1,24 @@
 import React from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { 
-  BarChart, 
-  Bar, 
-  XAxis, 
-  YAxis, 
-  CartesianGrid, 
-  Tooltip, 
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
   ResponsiveContainer,
   PieChart,
   Pie,
   Cell
 } from 'recharts'
-import { 
-  ShieldCheck, 
-  AlertTriangle, 
-  Clock, 
-  CheckCircle2, 
-  TrendingUp, 
-  FileText 
+import {
+  ShieldCheck,
+  AlertTriangle,
+  Clock,
+  CheckCircle2,
+  TrendingUp,
+  FileText
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 
@@ -59,36 +59,36 @@ export default function DashboardPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatsCard 
-          title="Escenarios Activos" 
-          value="41" 
-          change="+4 desde ayer" 
-          icon={<FileText className="h-5 w-5" />} 
+        <StatsCard
+          title="Escenarios Activos"
+          value="41"
+          change="+4 desde ayer"
+          icon={<FileText className="h-5 w-5" />}
         />
-        <StatsCard 
-          title="Reglas Observadas" 
-          value="18" 
-          change="-2 este periodo" 
-          icon={<AlertTriangle className="h-5 w-5 text-amber-500" />} 
+        <StatsCard
+          title="Reglas Observadas"
+          value="18"
+          change="-2 este periodo"
+          icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
           trend="down"
         />
-        <StatsCard 
-          title="Acciones Pendientes" 
-          value="7" 
-          change="3 críticas" 
-          icon={<Clock className="h-5 w-5 text-destructive" />} 
+        <StatsCard
+          title="Acciones Pendientes"
+          value="7"
+          change="3 críticas"
+          icon={<Clock className="h-5 w-5 text-destructive" />}
         />
-        <StatsCard 
-          title="Tasa de Calidad" 
-          value="95.4%" 
-          change="+1.2% global" 
-          icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />} 
+        <StatsCard
+          title="Tasa de Calidad"
+          value="95.4%"
+          change="+1.2% global"
+          icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}
           trend="up"
         />
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="lg:col-span-4 border-none shadow-md">
+        <Card className="lg:col-span-4 border-none shadow-md min-w-0">
           <CardHeader>
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
               <TrendingUp className="h-4 w-4" /> Distribución de Escenarios por Estado
@@ -96,13 +96,13 @@ export default function DashboardPage() {
             <CardDescription>Carga de trabajo actual por etapa del ciclo de vida.</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
-            <div className="h-[300px]">
+            <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={DATA_SCENARIOS}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={12} />
                   <YAxis axisLine={false} tickLine={false} fontSize={12} />
-                  <Tooltip 
+                  <Tooltip
                     cursor={{ fill: 'rgba(0,0,0,0.05)' }}
                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                   />
@@ -113,7 +113,7 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="lg:col-span-3 border-none shadow-md">
+        <Card className="lg:col-span-3 border-none shadow-md min-w-0">
           <CardHeader>
             <CardTitle className="text-lg font-semibold flex items-center gap-2">
               <ShieldCheck className="h-4 w-4" /> Dimensiones de Calidad
@@ -121,7 +121,7 @@ export default function DashboardPage() {
             <CardDescription>Principales focos de reglas activas.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px]">
+            <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -156,10 +156,10 @@ export default function DashboardPage() {
   )
 }
 
-function StatsCard({ title, value, change, icon, trend = 'neutral' }: { 
-  title: string, 
-  value: string, 
-  change: string, 
+function StatsCard({ title, value, change, icon, trend = 'neutral' }: {
+  title: string,
+  value: string,
+  change: string,
   icon: React.ReactNode,
   trend?: 'up' | 'down' | 'neutral'
 }) {
@@ -171,11 +171,10 @@ function StatsCard({ title, value, change, icon, trend = 'neutral' }: {
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold text-primary">{value}</div>
-        <p className={`text-xs mt-1 ${
-          trend === 'up' ? 'text-emerald-600' : 
-          trend === 'down' ? 'text-amber-600' : 
-          'text-muted-foreground'
-        }`}>
+        <p className={`text-xs mt-1 ${trend === 'up' ? 'text-emerald-600' :
+            trend === 'down' ? 'text-amber-600' :
+              'text-muted-foreground'
+          }`}>
           {change}
         </p>
       </CardContent>

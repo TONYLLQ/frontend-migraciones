@@ -1,5 +1,4 @@
 
-import * as React from "react"
 import {
   LayoutDashboard,
   FileText,
@@ -9,8 +8,7 @@ import {
   Search,
   PieChart,
   LogOut,
-  ChevronDown,
-  UserCircle
+  ChevronDown
 } from "lucide-react"
 
 import {
@@ -36,11 +34,12 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Link, useLocation } from "react-router-dom"
 import { useCurrentUser } from "@/hooks/use-current-user"
-import { MOCK_USERS } from "@/lib/mock-data"
 
 export function AppSidebar() {
   const { pathname } = useLocation();
-  const { user, switchUser, role } = useCurrentUser();
+  const { user, role, logout } = useCurrentUser();
+
+  if (!user) return null; // Or a skeleton loader? Sidebar usually renders instantly.
 
   return (
     <Sidebar className="border-r border-sidebar-border shadow-lg">
@@ -76,7 +75,7 @@ export function AppSidebar() {
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>
-              {role !== 'User' && (
+              {role !== 'VIEWER' && (
                 <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={pathname.startsWith("/rules")}>
                     <Link to="/rules">
@@ -90,7 +89,7 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {role !== 'User' && (
+        {role !== 'VIEWER' && (
           <SidebarGroup>
             <SidebarGroupLabel>Análisis & Reportes</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -112,7 +111,7 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
 
-        {role === 'Coordinator' && (
+        {role === 'COORDINATOR' && (
           <SidebarGroup>
             <SidebarGroupLabel>Administración</SidebarGroupLabel>
             <SidebarGroupContent>
@@ -134,33 +133,19 @@ export function AppSidebar() {
             <SidebarMenuButton size="lg" className="w-full gap-3 p-2 hover:bg-sidebar-accent">
               <Avatar className="h-8 w-8">
                 <AvatarImage src={`https://picsum.photos/seed/${user.id}/40/40`} />
-                <AvatarFallback>{user.name.substring(0,2).toUpperCase()}</AvatarFallback>
+                <AvatarFallback>{user.username ? user.username.substring(0, 2).toUpperCase() : 'U'}</AvatarFallback>
               </Avatar>
               <div className="flex flex-1 flex-col items-start text-sm">
-                <span className="font-semibold text-white">{user.name}</span>
-                <span className="text-xs text-sidebar-foreground/70">{user.role}</span>
+                <span className="font-semibold text-white">{user.username}</span>
+                <span className="text-xs text-sidebar-foreground/70">{role}</span>
               </div>
               <ChevronDown className="ml-auto h-4 w-4 text-sidebar-foreground/70" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-64" align="end" side="right">
-            <DropdownMenuLabel>Cambiar Perfil (Demo)</DropdownMenuLabel>
+            <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {MOCK_USERS.map((u) => (
-              <DropdownMenuItem 
-                key={u.id} 
-                className="cursor-pointer flex items-center justify-between"
-                onClick={() => switchUser(u.id)}
-              >
-                <div className="flex items-center gap-2">
-                  <UserCircle className="h-4 w-4" />
-                  <span>{u.name}</span>
-                </div>
-                <span className="text-[10px] bg-muted px-1 rounded">{u.role}</span>
-              </DropdownMenuItem>
-            ))}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem className="cursor-pointer text-destructive">
+            <DropdownMenuItem className="cursor-pointer text-destructive" onClick={logout}>
               <LogOut className="mr-2 h-4 w-4" />
               Cerrar Sesión
             </DropdownMenuItem>

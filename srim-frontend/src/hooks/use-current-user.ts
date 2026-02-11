@@ -1,36 +1,35 @@
-
 "use client"
 
 import { useState, useEffect } from 'react';
-import { MOCK_USERS } from '@/lib/mock-data';
-import { UserRole } from '@/types/data-quality';
+import { getCurrentUser, type User } from '@/services/user-service';
+import { isAuthenticated, logout } from '@/lib/auth';
 
 export function useCurrentUser() {
-  const [currentUser, setCurrentUser] = useState(MOCK_USERS[0]);
-
-  const switchUser = (userId: string) => {
-    const user = MOCK_USERS.find(u => u.id === userId);
-    if (user) {
-      setCurrentUser(user);
-      // Guardar en localStorage para persistencia básica en el prototipo
-      localStorage.setItem('dq_guardian_user', userId);
-    }
-  };
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const savedUserId = localStorage.getItem('dq_guardian_user');
-    if (savedUserId) {
-      const user = MOCK_USERS.find(u => u.id === savedUserId);
-      if (user) setCurrentUser(user);
+    if (isAuthenticated()) {
+      getCurrentUser()
+        .then(user => setCurrentUser(user))
+        .catch(err => {
+          console.error("Failed to fetch user", err);
+          // If 401, maybe logout? For now just log.
+        })
+        .finally(() => setIsLoading(false));
+    } else {
+      setIsLoading(false);
     }
   }, []);
 
   return {
     user: currentUser,
-    role: currentUser.role as UserRole,
-    switchUser,
-    isCoordinator: currentUser.role === 'Coordinator',
-    isAnalyst: currentUser.role === 'Analyst',
-    isUser: currentUser.role === 'User'
+    isLoading,
+    role: currentUser?.role,
+    // Helpers based on role
+    isCoordinator: currentUser?.role === 'COORDINATOR',
+    isAnalyst: currentUser?.role === 'ANALYST',
+    isViewer: currentUser?.role === 'VIEWER',
+    logout // Expose logout function
   };
 }
