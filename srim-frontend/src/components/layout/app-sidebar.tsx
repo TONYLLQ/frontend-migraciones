@@ -22,6 +22,8 @@ import {
   SidebarGroup,
   SidebarGroupLabel,
   SidebarGroupContent,
+  SidebarRail,
+  SidebarTrigger,
 } from "@/components/ui/sidebar"
 import {
   DropdownMenu,
@@ -42,17 +44,18 @@ export function AppSidebar() {
   if (!user) return null; // Or a skeleton loader? Sidebar usually renders instantly.
 
   return (
-    <Sidebar className="border-r border-sidebar-border shadow-lg">
-      <SidebarHeader className="p-6">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-primary text-white">
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border shadow-lg">
+      <SidebarHeader className="p-4 group-data-[collapsible=icon]:p-2 flex flex-row justify-between items-center group-data-[collapsible=icon]:flex-col group-data-[collapsible=icon]:gap-2">
+        <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
+          <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-sidebar-primary text-white shrink-0">
             <ShieldCheck className="h-6 w-6" />
           </div>
-          <div>
-            <h1 className="text-lg font-bold leading-none text-white">DQ Guardian</h1>
-            <p className="text-xs text-sidebar-foreground/70">Data Governance System</p>
+          <div className="group-data-[collapsible=icon]:hidden">
+            <h1 className="text-lg font-bold leading-none text-white">SRIM</h1>
+            <p className="text-xs text-sidebar-foreground/70">Sistema de Gestión de Calidad</p>
           </div>
         </div>
+        <SidebarTrigger className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground" />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
@@ -127,19 +130,19 @@ export function AppSidebar() {
           </SidebarGroup>
         )}
       </SidebarContent>
-      <SidebarFooter className="p-4">
+      <SidebarFooter className="p-4 group-data-[collapsible=icon]:p-2 text-wrap">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <SidebarMenuButton size="lg" className="w-full gap-3 p-2 hover:bg-sidebar-accent">
-              <Avatar className="h-8 w-8">
+            <SidebarMenuButton size="lg" className="w-full gap-3 p-2 hover:bg-sidebar-accent group-data-[collapsible=icon]:p-0 group-data-[collapsible=icon]:justify-center">
+              <Avatar className="h-8 w-8 shrink-0">
                 <AvatarImage src={`https://picsum.photos/seed/${user.id}/40/40`} />
                 <AvatarFallback>{user.username ? user.username.substring(0, 2).toUpperCase() : 'U'}</AvatarFallback>
               </Avatar>
-              <div className="flex flex-1 flex-col items-start text-sm">
+              <div className="flex flex-1 flex-col items-start text-sm group-data-[collapsible=icon]:hidden">
                 <span className="font-semibold text-white">{user.username}</span>
                 <span className="text-xs text-sidebar-foreground/70">{role}</span>
               </div>
-              <ChevronDown className="ml-auto h-4 w-4 text-sidebar-foreground/70" />
+              <ChevronDown className="ml-auto h-4 w-4 text-sidebar-foreground/70 group-data-[collapsible=icon]:hidden" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent className="w-64" align="end" side="right">
@@ -152,6 +155,7 @@ export function AppSidebar() {
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarFooter>
+      <SidebarRail />
     </Sidebar>
   )
 }
