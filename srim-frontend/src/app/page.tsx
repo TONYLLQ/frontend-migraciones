@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   BarChart,
@@ -21,14 +21,18 @@ import {
   FileText
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
+import { scenarioService } from '@/features/scenarios/service'
+import { SCENARIO_STATUS_LABELS, type Scenario, type ScenarioStatusCode } from '@/features/scenarios/types'
 
-const DATA_SCENARIOS = [
-  { name: 'Registrado', count: 12, fill: 'hsl(var(--muted))' },
-  { name: 'Asignado', count: 8, fill: 'hsl(210, 29%, 40%)' },
-  { name: 'Análisis', count: 15, fill: 'hsl(var(--primary))' },
-  { name: 'Acción', count: 6, fill: 'hsl(var(--accent))' },
-  { name: 'Monitoreo', count: 24, fill: '#10b981' },
-]
+const STATUS_COLORS: Record<ScenarioStatusCode, string> = {
+  REGISTRADO: 'hsl(var(--muted))',
+  ASIGNADO: 'hsl(210, 29%, 40%)',
+  ANALISIS: 'hsl(var(--primary))',
+  EVALUACION: '#94a3b8',
+  VALIDACION: '#64748b',
+  ACCION: 'hsl(var(--accent))',
+  MONITOREO: '#10b981',
+}
 
 const QUALITY_TREND = [
   { month: 'Ene', integrity: 92, uniqueness: 98, exactness: 88 },
@@ -44,6 +48,53 @@ const PIE_DATA = [
 ]
 
 export default function DashboardPage() {
+  const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [isLoading, setIsLoading] = useState(false)
+
+  useEffect(() => {
+    let active = true
+    const load = async () => {
+      setIsLoading(true)
+      try {
+        const data = await scenarioService.getAll()
+        if (active) setScenarios(data)
+      } catch {
+        if (active) setScenarios([])
+      } finally {
+        if (active) setIsLoading(false)
+      }
+    }
+    load()
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const scenarioCounts = useMemo(() => {
+    const counts: Record<ScenarioStatusCode, number> = {
+      REGISTRADO: 0,
+      ASIGNADO: 0,
+      ANALISIS: 0,
+      EVALUACION: 0,
+      VALIDACION: 0,
+      ACCION: 0,
+      MONITOREO: 0,
+    }
+    scenarios.forEach((s) => {
+      const code = s.status_code
+      if (code && counts[code] !== undefined) counts[code] += 1
+    })
+    return counts
+  }, [scenarios])
+
+  const scenarioChartData = useMemo(() => {
+    return (Object.keys(SCENARIO_STATUS_LABELS) as ScenarioStatusCode[]).map((code) => ({
+      name: SCENARIO_STATUS_LABELS[code],
+      count: scenarioCounts[code] ?? 0,
+      fill: STATUS_COLORS[code],
+    }))
+  }, [scenarioCounts])
+
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
       <div className="flex items-center justify-between">
@@ -61,8 +112,8 @@ export default function DashboardPage() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatsCard
           title="Escenarios Activos"
-          value="41"
-          change="+4 desde ayer"
+          value={isLoading ? "..." : String(scenarios.length)}
+          change={isLoading ? "Cargando..." : "Total registrados"}
           icon={<FileText className="h-5 w-5" />}
         />
         <StatsCard
@@ -98,7 +149,7 @@ export default function DashboardPage() {
           <CardContent className="pl-2">
             <div className="h-[300px] w-full">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={DATA_SCENARIOS}>
+                <BarChart data={scenarioChartData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} opacity={0.3} />
                   <XAxis dataKey="name" axisLine={false} tickLine={false} fontSize={12} />
                   <YAxis axisLine={false} tickLine={false} fontSize={12} />
@@ -165,9 +216,27 @@ function StatsCard({ title, value, change, icon, trend = 'neutral' }: {
 }) {
   return (
     <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-        <div className="rounded-full bg-muted p-1.5">{icon}</div>
+      <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+        <div>
+          <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+          <div className="mt-2 flex items-center gap-2">
+            <div className={`h-2.5 w-2.5 rounded-full ${
+              trend === 'up' ? 'bg-emerald-500' :
+              trend === 'down' ? 'bg-amber-500' :
+              'bg-slate-300'
+            }`} />
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {trend === 'up' ? 'Mejora' : trend === 'down' ? 'Alerta' : 'Estable'}
+            </span>
+          </div>
+        </div>
+        <div className={`rounded-full p-2 shadow-inner ${
+          trend === 'up' ? 'bg-emerald-50 text-emerald-600' :
+          trend === 'down' ? 'bg-amber-50 text-amber-600' :
+          'bg-slate-100 text-slate-600'
+        }`}>
+          {icon}
+        </div>
       </CardHeader>
       <CardContent>
         <div className="text-2xl font-bold text-primary">{value}</div>
