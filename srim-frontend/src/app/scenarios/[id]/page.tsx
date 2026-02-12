@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { scenarioService } from '@/features/scenarios/service'
 import { rulesService } from '@/features/rules/service'
+import { executionsService } from '@/features/executions/service'
 import type { Scenario, ApiScenarioStatus, ApiScenarioTransition } from '@/features/scenarios/types'
 import type { ApiQualityRule } from '@/features/rules/types'
 import { Badge } from '@/components/ui/badge'
@@ -166,7 +167,7 @@ const mapRule = (rule: ApiQualityRule): DataQualityRule => ({
     id: api.id,
     title: api.title,
     process: api.process_name as DataQualityScenario['process'],
-    status: mapStatusCode(api.status_code),
+    status: mapStatusCode((api.status_code as unknown as string) || (api.status as unknown as string)),
     analystId: api.analyst ?? api.created_by ?? '',
     createdAt: api.created_at,
     rules,
@@ -195,6 +196,7 @@ export default function ScenarioDetailPage() {
   const [analysts, setAnalysts] = useState<User[]>([])
   const [selectedAnalyst, setSelectedAnalyst] = useState("")
   const [isAssigning, setIsAssigning] = useState(false)
+  const [executingRuleId, setExecutingRuleId] = useState<string | null>(null)
   const { user, isCoordinator, isAnalyst } = useCurrentUser()
 
   useEffect(() => {
@@ -286,6 +288,21 @@ export default function ScenarioDetailPage() {
   const canAdvance = isAnalyst && isAssignedToMe
   const canFinalize = isAnalyst && isAssignedToMe
 
+  const handleExecuteRule = async (ruleId: string) => {
+    if (!scenarioApi) return
+    setExecutingRuleId(ruleId)
+    try {
+      const execution = await executionsService.execute(ruleId, scenarioApi.id)
+      toast({ title: 'Ejecucion iniciada', description: 'ID: ' + execution.id })
+    } catch (err: any) {
+      console.error(err)
+      const detail = err?.response?.data?.detail
+      toast({ variant: 'destructive', title: 'Error', description: detail || 'No se pudo ejecutar la regla.' })
+    } finally {
+      setExecutingRuleId(null)
+    }
+  }
+
   const handleLinkRule = async (rule: DataQualityRule) => {
     if (scenario.rules.some(r => r.id === rule.id)) {
       toast({ variant: "destructive", title: "Ya vinculada", description: "Esta regla ya forma parte del escenario." })
@@ -313,7 +330,8 @@ export default function ScenarioDetailPage() {
     const candidates = transitions.filter((t) => {
       if (!t.is_active) return false
       if (t.from_status === scenarioApi.status) return true
-      if (scenarioApi.status_code && t.from_status_code === scenarioApi.status_code) return true
+      const currentStatusCode = (scenarioApi.status_code as unknown as string) || (scenarioApi.status as unknown as string)
+      if (currentStatusCode && t.from_status_code === currentStatusCode) return true
       return false
     })
     return candidates.find((t) => {
@@ -536,7 +554,17 @@ export default function ScenarioDetailPage() {
 
                     {canModify && (
                       <div className="flex gap-2 pt-2">
-                        {isTechnical && <Button size="sm" variant="outline"><Play className="mr-2 h-3 w-3" /> Ejecutar Prueba</Button>}
+                        {isTechnical && (
+  <Button
+    size="sm"
+    variant="outline"
+    onClick={() => handleExecuteRule(rule.id)}
+    disabled={executingRuleId === rule.id}
+  >
+    <Play className="mr-2 h-3 w-3" />
+    {executingRuleId === rule.id ? 'Ejecutando...' : 'Ejecutar Prueba'}
+  </Button>
+)}
                         <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={async () => {
                           if (scenario.rules.length <= 1) {
                             setCannotUnlinkOpen(true)
@@ -764,3 +792,10 @@ export default function ScenarioDetailPage() {
     </div>
   )
 }
+
+
+
+
+
+
+
