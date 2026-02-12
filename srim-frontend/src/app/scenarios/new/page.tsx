@@ -1,12 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { useForm } from "react-hook-form"
-import { ArrowLeft, Loader2, Save } from "lucide-react"
+import { ArrowLeft, Loader2, Save, Upload } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
 import {
     Card,
     CardContent,
@@ -22,23 +21,69 @@ import {
     SelectValue,
 } from "@/components/ui/select"
 import { Label } from "@/components/ui/label"
-import { SCENARIO_PROCESS_LABELS, type CreateScenarioDTO, type ScenarioProcess } from "@/features/scenarios/types"
+import { Textarea } from "@/components/ui/textarea"
+import { type CreateScenarioDTO, type ApiScenarioProcess, type ApiScenarioStatus } from "@/features/scenarios/types"
 import { scenarioService } from "@/features/scenarios/service"
 import { useCurrentUser } from "@/hooks/use-current-user"
 
 export default function NewScenarioPage() {
     const navigate = useNavigate()
-    const { isCoordinator } = useCurrentUser()
+    const { isCoordinator, isAnalyst } = useCurrentUser()
+    const [processes, setProcesses] = useState<ApiScenarioProcess[]>([])
+    const [statuses, setStatuses] = useState<ApiScenarioStatus[]>([])
+    const [catalogError, setCatalogError] = useState<string | null>(null)
+    const [isCatalogLoading, setIsCatalogLoading] = useState(false)
     const [isLoading, setIsLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [file, setFile] = useState<File | null>(null)
 
     const { register, handleSubmit, setValue, formState: { errors } } = useForm<CreateScenarioDTO>()
+
+    const registeredStatusId = useMemo(() => {
+        const found = statuses.find((s) => s.code === "REGISTRADO" || s.code === "REGISTERED");
+        return found?.id ?? 0;
+    }, [statuses]);
+
+    useEffect(() => {
+        if (registeredStatusId) {
+            setValue("status", registeredStatusId, { shouldValidate: true });
+        }
+    }, [registeredStatusId, setValue]);
+
+    useEffect(() => {
+        let active = true;
+        const loadCatalogs = async () => {
+            setIsCatalogLoading(true);
+            setCatalogError(null);
+            try {
+                const [procData, statusData] = await Promise.all([
+                    scenarioService.getProcesses(),
+                    scenarioService.getStatuses(),
+                ]);
+                if (!active) return;
+                setProcesses(procData);
+                setStatuses(statusData);
+            } catch (err) {
+                console.error(err);
+                if (active) setCatalogError("No se pudo cargar el catálogo de procesos/estados.");
+            } finally {
+                if (active) setIsCatalogLoading(false);
+            }
+        };
+        loadCatalogs();
+        return () => {
+            active = false;
+        };
+    }, []);
 
     const onSubmit = async (data: CreateScenarioDTO) => {
         setIsLoading(true)
         setError(null)
         try {
-            await scenarioService.create(data)
+            if (!data.status && registeredStatusId) {
+                data.status = registeredStatusId;
+            }
+            await scenarioService.createWithFile(data, file)
             navigate("/scenarios")
         } catch (err) {
             console.error(err);
@@ -49,11 +94,11 @@ export default function NewScenarioPage() {
     }
 
     // Security check (UI level)
-    if (!isCoordinator) {
+    if (!isCoordinator && !isAnalyst) {
         return (
             <div className="flex h-full flex-col items-center justify-center gap-4">
                 <h2 className="text-xl font-semibold text-destructive">Acceso Denegado</h2>
-                <p>Solo los coordinadores pueden crear escenarios.</p>
+                <p>Solo coordinadores y analistas pueden crear escenarios.</p>
                 <Button onClick={() => navigate("/scenarios")}>Volver</Button>
             </div>
         )
@@ -98,18 +143,20 @@ export default function NewScenarioPage() {
 
                         <div className="space-y-2">
                             <Label htmlFor="process">Proceso de Negocio</Label>
-                            <Select onValueChange={(val) => setValue("process", val as ScenarioProcess)}>
+                            <input type="hidden" {...register("process", { required: "El proceso es obligatorio" })} />
+                            <Select onValueChange={(val) => setValue("process", Number(val), { shouldValidate: true })}>
                                 <SelectTrigger>
                                     <SelectValue placeholder="Seleccione un proceso" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                    {Object.entries(SCENARIO_PROCESS_LABELS).map(([key, label]) => (
-                                        <SelectItem key={key} value={key}>
-                                            {label}
+                                    {processes.map((p) => (
+                                        <SelectItem key={p.id} value={String(p.id)}>
+                                            {p.name}
                                         </SelectItem>
                                     ))}
                                 </SelectContent>
                             </Select>
+                            {errors.process && <span className="text-destructive text-xs">{errors.process.message}</span>}
                         </div>
 
                         <div className="space-y-2">
@@ -118,16 +165,41 @@ export default function NewScenarioPage() {
                                 id="description"
                                 placeholder="Describa el objetivo y alcance de este escenario de calidad..."
                                 className="min-h-[120px]"
-                                {...register("description", { required: "La descripción es obligatoria" })}
+                                {...register("description")}
                             />
-                            {errors.description && <span className="text-destructive text-xs">{errors.description.message}</span>}
                         </div>
+
+                        <div className="space-y-2">
+                            <Label htmlFor="archive" className="flex items-center gap-2">
+                                <Upload className="h-4 w-4 text-muted-foreground" />
+                                Archivo (opcional)
+                            </Label>
+                            <Input
+                                id="archive"
+                                type="file"
+                                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                            />
+                        </div>
+
+                        <input type="hidden" {...register("status", { required: "El estado es obligatorio" })} />
+                        {catalogError && (
+                            <div className="text-destructive text-xs">{catalogError}</div>
+                        )}
 
                         <div className="flex justify-end gap-4 pt-4">
                             <Button type="button" variant="outline" onClick={() => navigate("/scenarios")}>
                                 Cancelar
                             </Button>
-                            <Button type="submit" disabled={isLoading} className="gap-2">
+                            <Button
+                                type="submit"
+                                disabled={isLoading || isCatalogLoading || !registeredStatusId}
+                                className="gap-2"
+                                onClick={() => {
+                                    if (registeredStatusId) {
+                                        setValue("status", registeredStatusId, { shouldValidate: true });
+                                    }
+                                }}
+                            >
                                 {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
                                 Guardar Escenario
                             </Button>

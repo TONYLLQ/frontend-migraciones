@@ -1,9 +1,8 @@
-
-import React, { useState } from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import React, { useMemo, useState, useEffect } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Plus, Search, Filter, Code2, CheckCircle2, XCircle, Edit2, Trash2, Zap } from 'lucide-react'
+import { Plus, Search, Filter, Code2, CheckCircle2, Edit2, Trash2, Zap, Loader2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import {
   Dialog,
@@ -23,56 +22,139 @@ import {
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from '@/hooks/use-toast'
-import { RuleDimension, DataQualityRule, DataQualityRuleAction, RuleActionType } from '@/types/data-quality'
-import { GLOBAL_RULES_CATALOG } from '@/lib/mock-data'
 import { useCurrentUser } from '@/hooks/use-current-user'
 import { Separator } from '@/components/ui/separator'
+import { rulesService } from '@/features/rules/service'
+import type { ApiQualityRule, ApiActionType, ApiRuleDimension } from '@/features/rules/types'
+import type { Scenario } from '@/features/scenarios/types'
+import { scenarioService } from '@/features/scenarios/service'
 
-const DIMENSIONS: RuleDimension[] = ['Integrity', 'Consistency', 'Exactness', 'Uniqueness'];
-const ACTION_TYPES: RuleActionType[] = ['Preventive', 'Manual', 'Massive'];
+type FormRuleAction = {
+  id?: number;
+  actionTypeId: number;
+  actionTypeName: string;
+  description: string;
+};
 
 export default function RulesPage() {
-  const { role, isUser, isAnalyst, isCoordinator } = useCurrentUser();
-  const [rules, setRules] = useState<DataQualityRule[]>(GLOBAL_RULES_CATALOG)
+  const { isAnalyst, isCoordinator } = useCurrentUser();
+  const [rules, setRules] = useState<ApiQualityRule[]>([])
+  const [dimensions, setDimensions] = useState<ApiRuleDimension[]>([])
+  const [actionTypes, setActionTypes] = useState<ApiActionType[]>([])
+  const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [editingRule, setEditingRule] = useState<DataQualityRule | null>(null)
-  
+  const [editingRule, setEditingRule] = useState<ApiQualityRule | null>(null)
+  const [searchTerm, setSearchTerm] = useState("")
+  const canSave = dimensions.length > 0 && actionTypes.length > 0
+
   const [formData, setFormData] = useState({
     name: '',
-    dimension: 'Integrity' as RuleDimension,
+    dimensionId: 0,
     sql: '',
-    actions: [] as DataQualityRuleAction[]
+    isActive: true,
+    actions: [] as FormRuleAction[],
+    scenarioId: ''
   })
 
-  const [newAction, setNewAction] = useState({ type: 'Manual' as RuleActionType, description: '' })
+  const [newAction, setNewAction] = useState<FormRuleAction>({
+    actionTypeId: 0,
+    actionTypeName: '',
+    description: '',
+  })
 
   const canEdit = isCoordinator || isAnalyst;
   const isTechnical = isCoordinator || isAnalyst;
 
+  useEffect(() => {
+    let active = true;
+    const load = async () => {
+      setIsLoading(true);
+      setLoadError(null);
+      try {
+        const [rulesData, dims, actions, scenariosData] = await Promise.all([
+          rulesService.getRules(),
+          rulesService.getDimensions(),
+          rulesService.getActionTypes(),
+          scenarioService.getAll(),
+        ]);
+        if (!active) return;
+        setRules(rulesData);
+        setDimensions(dims);
+        setActionTypes(actions);
+        setScenarios(scenariosData);
+        setFormData((prev) => ({
+          ...prev,
+          dimensionId: dims[0]?.id ?? 0,
+        }));
+        setNewAction((prev) => ({
+          ...prev,
+          actionTypeId: actions[0]?.id ?? 0,
+          actionTypeName: actions[0]?.name ?? '',
+        }));
+      } catch (err) {
+        console.error(err);
+        if (active) setLoadError("No se pudo cargar el catálogo de reglas.");
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+    load();
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const handleOpenCreate = () => {
     setEditingRule(null);
-    setFormData({ name: '', dimension: 'Integrity', sql: '', actions: [] });
+    setFormData({
+      name: '',
+      dimensionId: dimensions[0]?.id ?? 0,
+      sql: '',
+      isActive: true,
+      actions: [],
+      scenarioId: '',
+    });
+    const defaultType = actionTypes[0];
+    setNewAction({
+      actionTypeId: defaultType?.id ?? 0,
+      actionTypeName: defaultType?.name ?? '',
+      description: '',
+    });
     setIsDialogOpen(true);
   }
 
-  const handleOpenEdit = (rule: DataQualityRule) => {
+  const handleOpenEdit = (rule: ApiQualityRule) => {
     setEditingRule(rule);
     setFormData({
       name: rule.name,
-      dimension: rule.dimension,
-      sql: rule.sqlQuery,
-      actions: [...rule.actions]
+      dimensionId: rule.dimension,
+      sql: rule.sql_query ?? '',
+      isActive: rule.is_active,
+      actions: rule.actions.map((a) => ({
+        id: a.id,
+        actionTypeId: a.action_type,
+        actionTypeName: a.action_type_name,
+        description: a.description,
+      })),
+      scenarioId: '',
     });
     setIsDialogOpen(true);
   }
 
   const addActionToRule = () => {
-    if (!newAction.description) return;
+    if (!newAction.description || !newAction.actionTypeId) return;
     setFormData({
       ...formData,
       actions: [...formData.actions, { ...newAction }]
     });
-    setNewAction({ type: 'Manual', description: '' });
+    const defaultType = actionTypes[0];
+    setNewAction({
+      actionTypeId: defaultType?.id ?? 0,
+      actionTypeName: defaultType?.name ?? '',
+      description: '',
+    });
   }
 
   const removeActionFromRule = (index: number) => {
@@ -82,12 +164,21 @@ export default function RulesPage() {
     });
   }
 
-  const handleSaveRule = () => {
+  const handleSaveRule = async () => {
     if (!formData.name) {
       toast({
         variant: "destructive",
         title: "Error",
         description: "Completa el nombre de la regla."
+      })
+      return;
+    }
+
+    if (!formData.dimensionId) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Selecciona una dimensión."
       })
       return;
     }
@@ -101,40 +192,97 @@ export default function RulesPage() {
       return;
     }
 
-    if (editingRule) {
-      setRules(rules.map(r => r.id === editingRule.id ? {
-        ...r,
-        name: formData.name,
-        dimension: formData.dimension,
-        sqlQuery: formData.sql,
-        actions: formData.actions
-      } : r));
-      
-      toast({
-        title: "Regla Actualizada",
-        description: `Se han guardado los cambios en la regla ${editingRule.id}.`
-      })
-    } else {
-      const created: DataQualityRule = {
-        id: `R-0${rules.length + 1}`,
-        name: formData.name,
-        dimension: formData.dimension,
-        isActive: isTechnical, // Si la crea un usuario no técnico, podría nacer inactiva hasta que se le asigne SQL
-        sqlQuery: formData.sql,
-        actions: formData.actions
-      };
-      setRules([created, ...rules]);
-      
-      toast({
-        title: "Regla Registrada",
-        description: isTechnical 
-          ? "La regla ha sido añadida al catálogo con su SQL." 
-          : "Regra de negocio creada. Un analista completará la validación técnica SQL."
-      })
-    }
+    try {
+      if (editingRule) {
+        await rulesService.updateRule(editingRule.id, {
+          name: formData.name,
+          dimension: formData.dimensionId,
+          is_active: formData.isActive,
+          sql_query: formData.sql || null,
+        });
 
-    setIsDialogOpen(false);
+        const currentIds = new Set(formData.actions.filter((a) => a.id).map((a) => a.id as number));
+        const toDelete = editingRule.actions.filter((a) => !currentIds.has(a.id));
+        const toCreate = formData.actions.filter((a) => !a.id);
+
+        await Promise.all([
+          ...toDelete.map((a) => rulesService.deleteRuleAction(a.id)),
+          ...toCreate.map((a) =>
+            rulesService.createRuleAction({
+              rule: editingRule.id,
+              action_type: a.actionTypeId,
+              description: a.description,
+            })
+          ),
+        ]);
+
+        toast({
+          title: "Regla Actualizada",
+          description: `Se han guardado los cambios en la regla ${editingRule.id}.`
+        });
+      } else {
+        const created = await rulesService.createRule({
+          name: formData.name,
+          dimension: formData.dimensionId,
+          is_active: formData.isActive,
+          sql_query: formData.sql || null,
+        });
+
+        if (formData.actions.length > 0) {
+          await Promise.all(
+            formData.actions.map((a) =>
+              rulesService.createRuleAction({
+                rule: created.id,
+                action_type: a.actionTypeId,
+                description: a.description,
+              })
+            )
+          );
+        }
+
+        if (formData.scenarioId) {
+          await scenarioService.createScenarioRule(formData.scenarioId, created.id);
+        }
+
+        toast({
+          title: "Regla Registrada",
+          description: isTechnical
+            ? "La regla ha sido añadida al catálogo con su SQL."
+            : "Regla de negocio creada. Un analista completará la validación técnica SQL."
+        });
+      }
+
+      const updatedRules = await rulesService.getRules();
+      setRules(updatedRules);
+      setIsDialogOpen(false);
+    } catch (err) {
+      console.error(err);
+      const axiosErr = err as any;
+      const detail = axiosErr?.response?.data?.detail;
+      const message = axiosErr?.response?.data?.message;
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: detail || message || "No se pudo guardar la regla. Intenta nuevamente."
+      });
+    }
   }
+
+  const filteredRules = useMemo(() => {
+    if (!searchTerm.trim()) return rules;
+    const term = searchTerm.toLowerCase();
+    return rules.filter((r) =>
+      r.name.toLowerCase().includes(term) ||
+      r.dimension_name.toLowerCase().includes(term) ||
+      r.id.toLowerCase().includes(term)
+    );
+  }, [rules, searchTerm]);
+
+  const resolveActionTypeName = (id: number) =>
+    actionTypes.find((a) => a.id === id)?.name || "";
+
+  const getRuleLabel = (rule: ApiQualityRule, index: number) =>
+    `R-${String(index + 1).padStart(2, "0")}`;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -172,17 +320,36 @@ export default function RulesPage() {
               <div className="grid gap-2">
                 <Label>Dimensión</Label>
                 <Select 
-                  value={formData.dimension} 
-                  onValueChange={(v) => setFormData({...formData, dimension: v as RuleDimension})}
+                  value={String(formData.dimensionId)} 
+                  onValueChange={(v) => setFormData({...formData, dimensionId: Number(v)})}
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {DIMENSIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+                    {dimensions.map(d => <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="grid gap-2">
+              <Label>Asociar a Escenario (opcional)</Label>
+              <Select
+                value={formData.scenarioId || undefined}
+                onValueChange={(v) => setFormData({ ...formData, scenarioId: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecciona un escenario" />
+                </SelectTrigger>
+                <SelectContent>
+                  {scenarios.map((s) => (
+                    <SelectItem key={s.id} value={s.id}>
+                      {s.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {isTechnical && (
@@ -202,15 +369,22 @@ export default function RulesPage() {
             <div className="space-y-4">
               <Label className="flex items-center gap-2"><Zap className="h-4 w-4 text-accent" /> Acciones Sugeridas</Label>
               <div className="flex gap-2">
-                <Select 
-                  value={newAction.type} 
-                  onValueChange={(v) => setNewAction({...newAction, type: v as RuleActionType})}
+                <Select
+                  value={String(newAction.actionTypeId)}
+                  onValueChange={(v) => {
+                    const id = Number(v);
+                    setNewAction({
+                      ...newAction,
+                      actionTypeId: id,
+                      actionTypeName: resolveActionTypeName(id),
+                    });
+                  }}
                 >
                   <SelectTrigger className="w-[180px]">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {ACTION_TYPES.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    {actionTypes.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Input 
@@ -226,7 +400,7 @@ export default function RulesPage() {
                 {formData.actions.map((action, idx) => (
                   <div key={idx} className="flex items-center justify-between p-2 rounded-md bg-muted/50 border">
                     <div className="flex items-center gap-3">
-                      <Badge variant="secondary" className="text-[10px]">{action.type}</Badge>
+                      <Badge variant="secondary" className="text-[10px]">{action.actionTypeName}</Badge>
                       <span className="text-sm">{action.description}</span>
                     </div>
                     <Button variant="ghost" size="icon" onClick={() => removeActionFromRule(idx)}>
@@ -239,7 +413,9 @@ export default function RulesPage() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsDialogOpen(false)}>Cancelar</Button>
-            <Button onClick={handleSaveRule}>{editingRule ? 'Guardar Cambios' : 'Guardar en Catálogo'}</Button>
+            <Button onClick={handleSaveRule} disabled={!canSave}>
+              Guardar en Catálogo
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -247,21 +423,36 @@ export default function RulesPage() {
       <div className="flex gap-4 items-center">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar regla..." className="pl-10" />
+          <Input
+            placeholder="Buscar regla..."
+            className="pl-10"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
         <Button variant="outline" size="sm"><Filter className="mr-2 h-4 w-4" /> Dimensiones</Button>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {rules.map((rule) => (
+      {isLoading && (
+        <div className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Cargando reglas...
+        </div>
+      )}
+      {loadError && (
+        <div className="text-destructive text-sm">{loadError}</div>
+      )}
+
+      {!isLoading && !loadError && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {filteredRules.map((rule, index) => (
           <Card key={rule.id} className="hover:border-accent transition-colors flex flex-col">
             <CardHeader className="pb-2">
               <div className="flex justify-between items-start">
-                <Badge variant="outline" className="text-[10px] font-mono">{rule.id}</Badge>
-                {rule.isActive ? (
+                <Badge variant="outline" className="text-[10px] font-mono">{getRuleLabel(rule, index)}</Badge>
+                {rule.is_active ? (
                   <Badge className="bg-emerald-100 text-emerald-800 border-none"><CheckCircle2 className="mr-1 h-3 w-3" /> Activa</Badge>
                 ) : (
-                  <Badge className="bg-amber-100 text-amber-800 border-none"><Clock className="mr-1 h-3 w-3" /> Pendiente SQL</Badge>
+                  <Badge className="bg-amber-100 text-amber-800 border-none">Inactiva</Badge>
                 )}
               </div>
               <CardTitle className="text-lg mt-2">{rule.name}</CardTitle>
@@ -276,7 +467,7 @@ export default function RulesPage() {
                 ))}
               </div>
               <div className="flex items-center justify-between text-xs mt-auto pt-4">
-                <span className="font-semibold text-muted-foreground uppercase tracking-tight">{rule.dimension}</span>
+                <span className="font-semibold text-muted-foreground uppercase tracking-tight">{rule.dimension_name}</span>
                 <div className="flex gap-1">
                   {canEdit && (
                     <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleOpenEdit(rule)}>
@@ -294,6 +485,7 @@ export default function RulesPage() {
           </Card>
         ))}
       </div>
+      )}
     </div>
   )
 }
