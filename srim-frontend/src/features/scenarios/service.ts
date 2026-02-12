@@ -20,12 +20,10 @@ export const scenarioService = {
         const form = new FormData();
         form.append("title", payload.title);
         if (payload.description) form.append("description", payload.description);
-        form.append("process", String(payload.process));
-        form.append("status", String(payload.status));
+        if (payload.process) form.append("process", String(payload.process));
+        if (payload.status) form.append("status", String(payload.status));
         if (file) form.append("archive", file);
-        const { data } = await http.post<Scenario>("/api/scenarios/scenarios/", form, {
-            headers: { "Content-Type": "multipart/form-data" },
-        });
+        const { data } = await http.post<Scenario>("/api/scenarios/scenarios/", form);
         return data;
     },
     updateWithFile: async (scenarioId: string, payload: Partial<CreateScenarioDTO>, file?: File | null) => {
@@ -35,9 +33,7 @@ export const scenarioService = {
         if (payload.process) form.append("process", String(payload.process));
         if (payload.status) form.append("status", String(payload.status));
         if (file) form.append("archive", file);
-        const { data } = await http.patch<Scenario>(`/api/scenarios/scenarios/${scenarioId}/`, form, {
-            headers: { "Content-Type": "multipart/form-data" },
-        });
+        const { data } = await http.patch<Scenario>(`/api/scenarios/scenarios/${scenarioId}/`, form);
         return data;
     },
     getProcesses: async () => {

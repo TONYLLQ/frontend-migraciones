@@ -13,6 +13,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+} from "@/components/ui/dropdown-menu"
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -63,6 +72,11 @@ export default function RulesPage() {
     actionTypeName: '',
     description: '',
   })
+
+  const [viewingSqlRule, setViewingSqlRule] = useState<ApiQualityRule | null>(null)
+  const [isSqlDialogOpen, setIsSqlDialogOpen] = useState(false)
+
+  const [selectedDimensionFilter, setSelectedDimensionFilter] = useState<number | 'all'>('all')
 
   const canEdit = isCoordinator || isAnalyst;
   const isTechnical = isCoordinator || isAnalyst;
@@ -138,7 +152,7 @@ export default function RulesPage() {
         actionTypeName: a.action_type_name,
         description: a.description,
       })),
-      scenarioId: '',
+      scenarioId: scenarios.find(s => s.rules?.includes(rule.id))?.id || '',
     });
     setIsDialogOpen(true);
   }
@@ -162,6 +176,11 @@ export default function RulesPage() {
       ...formData,
       actions: formData.actions.filter((_, i) => i !== index)
     });
+  }
+
+  const handleViewSql = (rule: ApiQualityRule) => {
+    setViewingSqlRule(rule);
+    setIsSqlDialogOpen(true);
   }
 
   const handleSaveRule = async () => {
@@ -216,6 +235,22 @@ export default function RulesPage() {
           ),
         ]);
 
+        const oldScenario = scenarios.find(s => s.rules?.includes(editingRule.id));
+        const newScenarioId = formData.scenarioId;
+
+        if (oldScenario?.id !== newScenarioId) {
+          if (oldScenario) {
+            try {
+              await scenarioService.unlinkScenarioRule(oldScenario.id, editingRule.id);
+            } catch (e) {
+              console.warn("Could not unlink from previous scenario", e);
+            }
+          }
+          if (newScenarioId) {
+            await scenarioService.createScenarioRule(newScenarioId, editingRule.id);
+          }
+        }
+
         toast({
           title: "Regla Actualizada",
           description: `Se han guardado los cambios en la regla ${editingRule.id}.`
@@ -253,7 +288,9 @@ export default function RulesPage() {
       }
 
       const updatedRules = await rulesService.getRules();
+      const updatedScenarios = await scenarioService.getAll();
       setRules(updatedRules);
+      setScenarios(updatedScenarios);
       setIsDialogOpen(false);
     } catch (err) {
       console.error(err);
@@ -269,14 +306,23 @@ export default function RulesPage() {
   }
 
   const filteredRules = useMemo(() => {
-    if (!searchTerm.trim()) return rules;
-    const term = searchTerm.toLowerCase();
-    return rules.filter((r) =>
-      r.name.toLowerCase().includes(term) ||
-      r.dimension_name.toLowerCase().includes(term) ||
-      r.id.toLowerCase().includes(term)
-    );
-  }, [rules, searchTerm]);
+    let result = rules;
+
+    if (selectedDimensionFilter !== 'all') {
+      result = result.filter(r => r.dimension === selectedDimensionFilter);
+    }
+
+    if (searchTerm.trim()) {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((r) =>
+        r.name.toLowerCase().includes(term) ||
+        r.dimension_name.toLowerCase().includes(term) ||
+        r.id.toLowerCase().includes(term)
+      );
+    }
+
+    return result;
+  }, [rules, searchTerm, selectedDimensionFilter]);
 
   const resolveActionTypeName = (id: number) =>
     actionTypes.find((a) => a.id === id)?.name || "";
@@ -291,7 +337,7 @@ export default function RulesPage() {
           <h2 className="text-3xl font-bold tracking-tight text-primary">Catálogo de Reglas</h2>
           <p className="text-muted-foreground">Definiciones de calidad y acciones remediadoras vinculadas.</p>
         </div>
-        
+
         <Button className="bg-accent hover:bg-accent/90" onClick={handleOpenCreate}>
           <Plus className="mr-2 h-4 w-4" /> Nueva Regla
         </Button>
@@ -302,8 +348,8 @@ export default function RulesPage() {
           <DialogHeader>
             <DialogTitle>{editingRule ? 'Editar Regla' : 'Nueva Regla de Calidad'}</DialogTitle>
             <DialogDescription>
-              {isTechnical 
-                ? 'Define los criterios de negocio y la validación técnica SQL.' 
+              {isTechnical
+                ? 'Define los criterios de negocio y la validación técnica SQL.'
                 : 'Describe la regla de negocio que deseas monitorear.'}
             </DialogDescription>
           </DialogHeader>
@@ -311,17 +357,17 @@ export default function RulesPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
                 <Label>Nombre de la Regla</Label>
-                <Input 
-                  placeholder="Ej: Validación DNI" 
+                <Input
+                  placeholder="Ej: Validación DNI"
                   value={formData.name}
-                  onChange={(e) => setFormData({...formData, name: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                 />
               </div>
               <div className="grid gap-2">
                 <Label>Dimensión</Label>
-                <Select 
-                  value={String(formData.dimensionId)} 
-                  onValueChange={(v) => setFormData({...formData, dimensionId: Number(v)})}
+                <Select
+                  value={String(formData.dimensionId)}
+                  onValueChange={(v) => setFormData({ ...formData, dimensionId: Number(v) })}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -355,11 +401,11 @@ export default function RulesPage() {
             {isTechnical && (
               <div className="grid gap-2">
                 <Label>Consulta SQL de Validación</Label>
-                <Textarea 
-                  placeholder="SELECT * FROM table WHERE column IS NULL..." 
+                <Textarea
+                  placeholder="SELECT * FROM table WHERE column IS NULL..."
                   className="font-mono text-xs min-h-[100px]"
                   value={formData.sql}
-                  onChange={(e) => setFormData({...formData, sql: e.target.value})}
+                  onChange={(e) => setFormData({ ...formData, sql: e.target.value })}
                 />
               </div>
             )}
@@ -387,10 +433,10 @@ export default function RulesPage() {
                     {actionTypes.map(t => <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <Input 
-                  placeholder="Descripción de la acción..." 
+                <Input
+                  placeholder="Descripción de la acción..."
                   value={newAction.description}
-                  onChange={(e) => setNewAction({...newAction, description: e.target.value})}
+                  onChange={(e) => setNewAction({ ...newAction, description: e.target.value })}
                   className="flex-1"
                 />
                 <Button variant="outline" size="icon" onClick={addActionToRule}><Plus className="h-4 w-4" /></Button>
@@ -420,6 +466,28 @@ export default function RulesPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={isSqlDialogOpen} onOpenChange={setIsSqlDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Consulta SQL de Validación</DialogTitle>
+            <DialogDescription>
+              Regla: {viewingSqlRule?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label>SQL Query</Label>
+              <div className="rounded-md bg-muted p-4 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
+                {viewingSqlRule?.sql_query || "-- No hay consulta SQL definida --"}
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setIsSqlDialogOpen(false)}>Cerrar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex gap-4 items-center">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -430,7 +498,29 @@ export default function RulesPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
-        <Button variant="outline" size="sm"><Filter className="mr-2 h-4 w-4" /> Dimensiones</Button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className={selectedDimensionFilter !== 'all' ? "bg-accent text-accent-foreground border-accent" : ""}>
+              <Filter className="mr-2 h-4 w-4" />
+              {selectedDimensionFilter === 'all'
+                ? "Dimensiones"
+                : dimensions.find(d => d.id === selectedDimensionFilter)?.name || "Dimensiones"}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            <DropdownMenuLabel>Filtrar por Dimensión</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            <DropdownMenuRadioGroup value={String(selectedDimensionFilter)} onValueChange={(v) => setSelectedDimensionFilter(v === 'all' ? 'all' : Number(v))}>
+              <DropdownMenuRadioItem value="all">Todas</DropdownMenuRadioItem>
+              {dimensions.map((dim) => (
+                <DropdownMenuRadioItem key={dim.id} value={String(dim.id)}>
+                  {dim.name}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {isLoading && (
@@ -444,47 +534,42 @@ export default function RulesPage() {
 
       {!isLoading && !loadError && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {filteredRules.map((rule, index) => (
-          <Card key={rule.id} className="hover:border-accent transition-colors flex flex-col">
-            <CardHeader className="pb-2">
-              <div className="flex justify-between items-start">
-                <Badge variant="outline" className="text-[10px] font-mono">{getRuleLabel(rule, index)}</Badge>
-                {rule.is_active ? (
-                  <Badge className="bg-emerald-100 text-emerald-800 border-none"><CheckCircle2 className="mr-1 h-3 w-3" /> Activa</Badge>
-                ) : (
-                  <Badge className="bg-amber-100 text-amber-800 border-none">Inactiva</Badge>
-                )}
-              </div>
-              <CardTitle className="text-lg mt-2">{rule.name}</CardTitle>
-            </CardHeader>
-            <CardContent className="flex-1 flex flex-col">
-              <div className="mt-2 space-y-1">
-                <p className="text-[10px] font-bold text-muted-foreground uppercase">Acciones ({rule.actions.length}):</p>
-                {rule.actions.map((a, i) => (
-                  <div key={i} className="text-[11px] flex items-center gap-1">
-                    <Zap className="h-2 w-2 text-accent" /> {a.description}
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center justify-between text-xs mt-auto pt-4">
-                <span className="font-semibold text-muted-foreground uppercase tracking-tight">{rule.dimension_name}</span>
-                <div className="flex gap-1">
-                  {canEdit && (
-                    <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleOpenEdit(rule)}>
-                      <Edit2 className="mr-2 h-3 w-3" /> Editar
-                    </Button>
-                  )}
-                  {isTechnical && (
-                    <Button variant="ghost" size="sm" className="h-8 px-2">
-                      <Code2 className="mr-2 h-3 w-3" /> SQL
-                    </Button>
+          {filteredRules.map((rule, index) => (
+            <Card key={rule.id} className="hover:border-accent transition-colors flex flex-col">
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-start">
+                  <Badge variant="outline" className="text-[10px] font-mono">{getRuleLabel(rule, index)}</Badge>
+                  {rule.is_active ? (
+                    <Badge className="bg-emerald-100 text-emerald-800 border-none"><CheckCircle2 className="mr-1 h-3 w-3" /> Activa</Badge>
+                  ) : (
+                    <Badge className="bg-amber-100 text-amber-800 border-none">Inactiva</Badge>
                   )}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+                <CardTitle className="text-lg mt-2">{rule.name}</CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 flex flex-col">
+                <div className="mt-2 space-y-1">
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Acciones ({rule.actions.length})</p>
+                </div>
+                <div className="flex items-center justify-between text-xs mt-auto pt-4">
+                  <span className="font-semibold text-muted-foreground uppercase tracking-tight">{rule.dimension_name}</span>
+                  <div className="flex gap-1">
+                    {canEdit && (
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleOpenEdit(rule)}>
+                        <Edit2 className="mr-2 h-3 w-3" /> Editar
+                      </Button>
+                    )}
+                    {isTechnical && (
+                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleViewSql(rule)}>
+                        <Code2 className="mr-2 h-3 w-3" /> SQL
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
     </div>
   )

@@ -2,13 +2,13 @@ export type UserRole = 'Coordinator' | 'Analyst' | 'User';
 
 export type ProcessType = 'Control Migratorio' | 'Nacionalización' | 'Emisión de Documentos' | 'Inmigración';
 
-export type ScenarioStatus = 
-  | 'Registered' 
-  | 'Assigned' 
-  | 'Analysis' 
-  | 'Evaluation' 
-  | 'Prioritization' 
-  | 'Action' 
+export type ScenarioStatus =
+  | 'Registered'
+  | 'Assigned'
+  | 'Analysis'
+  | 'Evaluation'
+  | 'Prioritization'
+  | 'Action'
   | 'Monitoring';
 
 export type RuleDimension = 'Uniqueness' | 'Integrity' | 'Consistency' | 'Exactness';
@@ -64,4 +64,7 @@ export interface DataQualityScenario {
     url: string;
     uploadedAt: string;
   }[];
+  archive?: string | null;
+  archiveUploadedAt?: string | null;
+  archiveStageId?: number | null;
 }

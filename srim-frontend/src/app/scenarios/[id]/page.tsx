@@ -19,7 +19,6 @@ import {
   ArrowLeft,
   Upload,
   Play,
-  CheckCircle,
   Clock,
   ExternalLink,
   PlusCircle,
@@ -139,7 +138,7 @@ const mapRule = (rule: ApiQualityRule): DataQualityRule => ({
   }))
 })
 
-  const mapScenario = (api: Scenario, rulesCatalog: ApiQualityRule[]): DataQualityScenario => {
+const mapScenario = (api: Scenario, rulesCatalog: ApiQualityRule[]): DataQualityScenario => {
   const rulesMap = new Map(rulesCatalog.map((r) => [r.id, r]))
   const rules: DataQualityRule[] = (api.rules || [])
     .map((id) => rulesMap.get(id))
@@ -174,6 +173,9 @@ const mapRule = (rule: ApiQualityRule): DataQualityRule => ({
     actions,
     history,
     documents: [],
+    archive: api.archive,
+    archiveUploadedAt: api.archive_uploaded_at,
+    archiveStageId: api.archive_stage,
   }
 }
 
@@ -482,16 +484,14 @@ export default function ScenarioDetailPage() {
 
               return (
                 <div key={step} className="relative z-10 flex flex-col items-center gap-2 group">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full border-4 ${
-                    isCompleted ? 'bg-primary border-primary text-white' :
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full border-4 ${isCompleted ? 'bg-primary border-primary text-white' :
                     isCurrent ? 'bg-background border-accent text-accent animate-pulse' :
-                    'bg-background border-muted text-muted-foreground'
-                  } transition-all duration-300`}>
+                      'bg-background border-muted text-muted-foreground'
+                    } transition-all duration-300`}>
                     {isCompleted ? <CheckCircle2 className="h-6 w-6" /> : <span className="text-sm font-bold">{index + 1}</span>}
                   </div>
-                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${
-                    isCurrent ? 'text-accent' : isCompleted ? 'text-primary' : 'text-muted-foreground'
-                  }`}>
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${isCurrent ? 'text-accent' : isCompleted ? 'text-primary' : 'text-muted-foreground'
+                    }`}>
                     {STEP_LABELS[step]}
                   </span>
                 </div>
@@ -506,7 +506,7 @@ export default function ScenarioDetailPage() {
           <Tabs defaultValue="rules" className="w-full">
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="rules" className="gap-2"><ShieldAlert className="h-4 w-4" /> Reglas Aplicadas ({scenario.rules.length})</TabsTrigger>
-              <TabsTrigger value="actions" className="gap-2"><Play className="h-4 w-4" /> Acciones ({scenario.actions.length})</TabsTrigger>
+              <TabsTrigger value="actions" className="gap-2"><Play className="h-4 w-4" /> Acciones ({scenario.rules.reduce((acc, r) => acc + r.actions.length, 0)})</TabsTrigger>
               <TabsTrigger value="docs" className="gap-2"><FileCode className="h-4 w-4" /> Docs</TabsTrigger>
             </TabsList>
 
@@ -555,16 +555,16 @@ export default function ScenarioDetailPage() {
                     {canModify && (
                       <div className="flex gap-2 pt-2">
                         {isTechnical && (
-  <Button
-    size="sm"
-    variant="outline"
-    onClick={() => handleExecuteRule(rule.id)}
-    disabled={executingRuleId === rule.id}
-  >
-    <Play className="mr-2 h-3 w-3" />
-    {executingRuleId === rule.id ? 'Ejecutando...' : 'Ejecutar Prueba'}
-  </Button>
-)}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleExecuteRule(rule.id)}
+                            disabled={executingRuleId === rule.id}
+                          >
+                            <Play className="mr-2 h-3 w-3" />
+                            {executingRuleId === rule.id ? 'Ejecutando...' : 'Ejecutar Prueba'}
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={async () => {
                           if (scenario.rules.length <= 1) {
                             setCannotUnlinkOpen(true)
@@ -593,90 +593,109 @@ export default function ScenarioDetailPage() {
             </TabsContent>
 
             <TabsContent value="actions" className="mt-4 space-y-4">
-              {scenario.actions.length > 0 ? scenario.actions.map(action => {
-                const associatedRule = scenario.rules.find(r => r.id === action.ruleId)
-                return (
-                  <Card key={action.id}>
-                    <CardContent className="flex items-center justify-between p-6">
-                      <div className="flex items-start gap-4">
-                        <div className={`mt-1 h-5 w-5 rounded-full ${action.status === 'Executed' ? 'text-emerald-500' : 'text-amber-500'}`}>
-                          {action.status === 'Executed' ? <CheckCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
-                        </div>
-                        <div>
-                          <p className="font-medium">{action.description}</p>
-                          <div className="flex gap-2 items-center mt-1">
-                            {associatedRule && (
-                              <Badge variant="outline" className="text-[9px] bg-accent/5">
-                                Originado por: {associatedRule.name}
-                              </Badge>
-                            )}
-                            <p className="text-[10px] text-muted-foreground">Responsable: {action.responsibleId || 'Sin asignar'}</p>
+              {scenario.rules.length > 0 ? scenario.rules.map(rule => (
+                <Card key={rule.id}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base text-primary">{rule.name}</CardTitle>
+                      <Badge variant="outline">{rule.dimension}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {rule.actions.length > 0 ? (
+                      rule.actions.map((action, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 bg-muted/30 rounded-md border">
+                          <div className={`mt-0.5 h-2 w-2 rounded-full ${action.type === 'Preventive' ? 'bg-blue-500' :
+                            action.type === 'Massive' ? 'bg-purple-500' : 'bg-orange-500'
+                            }`} />
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-sm">{action.description}</span>
+                              <Badge variant="secondary" className="text-[10px]">{action.type}</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Acción definida para la regla.
+                            </p>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant={action.status === 'Executed' ? 'outline' : 'default'} disabled={!canModify && action.status === 'Pending'}>
-                          {action.status === 'Executed' ? 'Ver Evidencia' : 'Completar Acción'}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              }) : (
+                      ))
+                    ) : (
+                      <div className="text-sm text-muted-foreground italic">No hay acciones definidas para esta regla.</div>
+                    )}
+                  </CardContent>
+                </Card>
+              )) : (
                 <div className="flex h-40 flex-col items-center justify-center rounded-lg border border-dashed text-muted-foreground">
-                  <p>Sin acciones registradas.</p>
+                  <p>No hay reglas vinculadas para mostrar acciones.</p>
                 </div>
               )}
             </TabsContent>
 
-            <TabsContent value="docs" className="mt-4">
+            <TabsContent value="docs" className="mt-4 space-y-4">
               <Card>
-                <CardContent className="p-6">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">Archivos Adjuntos</h4>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Gestión de Archivos</CardTitle>
                     <div className="flex items-center gap-2">
                       <input
                         type="file"
+                        id="file-upload"
                         onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                        className="text-sm"
+                        className="hidden"
                       />
-                      <Button size="sm" variant="outline" onClick={handleUpload} disabled={!uploadFile || isUploading}>
-                        <Upload className="mr-2 h-4 w-4" />
-                        {isUploading ? "Subiendo..." : "Subir"}
+                      <label
+                        htmlFor="file-upload"
+                        className="text-sm px-3 py-2 bg-secondary text-secondary-foreground rounded-md cursor-pointer hover:bg-secondary/80 flex items-center gap-2"
+                      >
+                        <Upload className="h-4 w-4" />
+                        {uploadFile ? uploadFile.name : "Seleccionar archivo"}
+                      </label>
+                      <Button size="sm" onClick={handleUpload} disabled={!uploadFile || isUploading}>
+                        {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Subir"}
                       </Button>
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    {scenarioApi?.archive ? (
-                      <div className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50">
-                        <div className="flex items-center gap-2">
-                          <FileCode className="h-4 w-4 text-blue-500" />
-                          <span>Archivo actual</span>
-                          {scenarioApi.archive_uploaded_at && (
-                            <span className="text-[10px] text-muted-foreground">
-                              {new Date(scenarioApi.archive_uploaded_at).toLocaleString()}
-                            </span>
-                          )}
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {statuses.map(status => {
+                    const isCurrentStageFile = scenarioApi?.archive_stage === status.id;
+                    if (!isCurrentStageFile) return null;
+
+                    return (
+                      <div key={status.id} className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                          <div className="h-2 w-2 rounded-full bg-primary" />
+                          Etapa: {status.name}
+                        </h4>
+                        <div className="rounded-md border p-3 flex items-center justify-between bg-muted/20">
+                          <div className="flex items-center gap-3">
+                            <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
+                              <FileCode className="h-5 w-5" />
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">Documento de Evidencia</p>
+                              {scenarioApi?.archive_uploaded_at && (
+                                <p className="text-[10px] text-muted-foreground">
+                                  Subido el {new Date(scenarioApi.archive_uploaded_at).toLocaleString()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <Button variant="ghost" size="sm" asChild>
+                            <a href={scenarioApi?.archive || '#'} target="_blank" rel="noreferrer" className="gap-2">
+                              <ExternalLink className="h-4 w-4" /> Abrir
+                            </a>
+                          </Button>
                         </div>
-                        <Button size="icon" variant="ghost" className="h-8 w-8" asChild>
-                          <a href={scenarioApi.archive} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
-                        </Button>
                       </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">Sin archivo adjunto.</div>
-                    )}
-                    {scenario.documents.map(doc => (
-                      <div key={doc.id} className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50">
-                        <div className="flex items-center gap-2">
-                          <FileCode className="h-4 w-4 text-blue-500" />
-                          <span>{doc.name}</span>
-                        </div>
-                        <Button size="icon" variant="ghost" className="h-8 w-8"><ExternalLink className="h-4 w-4" /></Button>
-                      </div>
-                    ))}
-                  </div>
+                    );
+                  })}
+
+                  {!scenarioApi?.archive && (
+                    <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
+                      No hay archivos adjuntos en ninguna etapa.
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>

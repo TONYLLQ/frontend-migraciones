@@ -30,6 +30,10 @@ import {
     DropdownMenuContent,
     DropdownMenuItem,
     DropdownMenuTrigger,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
 } from "@/components/ui/dropdown-menu"
 import {
     Select,
@@ -62,6 +66,10 @@ export default function ScenariosPage() {
     const [statuses, setStatuses] = useState<ApiScenarioStatus[]>([])
     const [catalogError, setCatalogError] = useState<string | null>(null)
     const [isCatalogLoading, setIsCatalogLoading] = useState(false)
+
+    const [filterProcess, setFilterProcess] = useState<string>("all")
+    const [filterStatus, setFilterStatus] = useState<string>("all")
+    const [searchTerm, setSearchTerm] = useState("")
 
     const { register, handleSubmit, setValue, reset, formState: { errors } } = useForm<CreateScenarioDTO>()
 
@@ -141,6 +149,19 @@ export default function ScenariosPage() {
         };
     }, []);
 
+    const filteredScenarios = useMemo(() => {
+        return scenarios.filter((s) => {
+            const matchesSearch = searchTerm === "" ||
+                s.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                s.id.toLowerCase().includes(searchTerm.toLowerCase());
+
+            const matchesProcess = filterProcess === "all" || s.process === Number(filterProcess);
+            const matchesStatus = filterStatus === "all" || s.status === Number(filterStatus);
+
+            return matchesSearch && matchesProcess && matchesStatus;
+        });
+    }, [scenarios, searchTerm, filterProcess, filterStatus]);
+
     const openAssign = (scenario: Scenario) => {
         if (!scenario.rules_count || scenario.rules_count === 0) {
             setNeedsRuleOpen(true);
@@ -170,18 +191,71 @@ export default function ScenariosPage() {
         setIsSaving(true)
         setCreateError(null)
         try {
-            if (!data.status && registeredStatusId) {
-                data.status = registeredStatusId;
+            let finalStatus = data.status;
+            if (!finalStatus && registeredStatusId) {
+                finalStatus = registeredStatusId;
             }
-            await scenarioService.createWithFile(data, createFile)
+
+            let proc = processes.find(p => String(p.id) === String(data.process));
+            if (!proc) {
+                proc = processes.find(p => p.code === String(data.process));
+            }
+
+            let stat = statuses.find(s => String(s.id) === String(finalStatus));
+            if (!stat) {
+                stat = statuses.find(s => s.code === String(finalStatus));
+            }
+
+            if (!proc) {
+                console.error("Process not found in catalog for ID:", data.process);
+                throw { response: { data: "Error interno: Proceso no encontrado en catálogo." } };
+            }
+            if (!stat && !finalStatus) {
+                console.error("Status not found and no final status:", finalStatus);
+                throw { response: { data: "Error interno: Estado inicial no determinado." } };
+            }
+
+            if (finalStatus === 0 && !stat) {
+                throw { response: { data: "El estado inicial 'REGISTRADO' no existe en el catálogo cargado." } };
+            }
+
+            const payload: CreateScenarioDTO = {
+                ...data,
+                process: proc.code,
+                status: stat?.code || "REGISTERED"
+            };
+
+            await scenarioService.createWithFile(payload, createFile)
             const updated = await scenarioService.getAll()
             setScenarios(updated)
             reset()
             setCreateFile(null)
             setIsCreateOpen(false)
-        } catch (err) {
+        } catch (err: any) {
             console.error(err)
-            setCreateError("Error al crear el escenario. Por favor intente nuevamente.")
+            const detail = err?.response?.data;
+            let msg = "Error al crear el escenario.";
+
+            if (detail) {
+                if (typeof detail === "string") {
+                    msg = detail;
+                } else if (Array.isArray(detail) && detail.length > 0) {
+                    msg = detail[0];
+                } else if (typeof detail === "object") {
+                    // Extract first error message from object if possible, or stringify
+                    const keys = Object.keys(detail);
+                    if (keys.length > 0) {
+                        const firstKey = keys[0];
+                        const firstError = detail[firstKey];
+                        if (Array.isArray(firstError)) {
+                            msg = `${firstKey}: ${firstError[0]}`;
+                        } else {
+                            msg = `${firstKey}: ${String(firstError)}`;
+                        }
+                    }
+                }
+            }
+            setCreateError(msg)
         } finally {
             setIsSaving(false)
         }
@@ -240,13 +314,13 @@ export default function ScenariosPage() {
                                 <div className="space-y-2">
                                     <Label htmlFor="process">Proceso de Negocio</Label>
                                     <input type="hidden" {...register("process", { required: "El proceso es obligatorio" })} />
-                                    <Select onValueChange={(val) => setValue("process", Number(val), { shouldValidate: true })}>
+                                    <Select onValueChange={(val) => setValue("process", val, { shouldValidate: true })}>
                                         <SelectTrigger>
                                             <SelectValue placeholder="Seleccione un proceso" />
                                         </SelectTrigger>
                                         <SelectContent>
                                             {processes.map((p) => (
-                                                <SelectItem key={p.id} value={String(p.id)}>
+                                                <SelectItem key={p.id} value={String(p.code)}>
                                                     {p.name}
                                                 </SelectItem>
                                             ))}
@@ -312,11 +386,45 @@ export default function ScenariosPage() {
                     <Input
                         placeholder="Buscar por ID o título..."
                         className="pl-9 bg-white shadow-sm"
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
                     />
                 </div>
-                <Button variant="outline" className="gap-2 bg-white shadow-sm">
-                    <Filter className="h-4 w-4" /> Filtros
-                </Button>
+                <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                        <Button variant="outline" className="gap-2 bg-white shadow-sm">
+                            <Filter className="h-4 w-4" /> Filtros
+                            {(filterProcess !== "all" || filterStatus !== "all") && (
+                                <Badge variant="secondary" className="ml-1 h-5 w-5 rounded-full p-0 flex items-center justify-center text-[10px]">
+                                    {(filterProcess !== "all" ? 1 : 0) + (filterStatus !== "all" ? 1 : 0)}
+                                </Badge>
+                            )}
+                        </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-56">
+                        <DropdownMenuLabel>Filtrar por Proceso</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuRadioGroup value={filterProcess} onValueChange={setFilterProcess}>
+                            <DropdownMenuRadioItem value="all">Todos</DropdownMenuRadioItem>
+                            {processes.map((p) => (
+                                <DropdownMenuRadioItem key={p.id} value={String(p.id)}>
+                                    {p.name}
+                                </DropdownMenuRadioItem>
+                            ))}
+                        </DropdownMenuRadioGroup>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuLabel>Filtrar por Estado</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuRadioGroup value={filterStatus} onValueChange={setFilterStatus}>
+                            <DropdownMenuRadioItem value="all">Todos</DropdownMenuRadioItem>
+                            {statuses.map((s) => (
+                                <DropdownMenuRadioItem key={s.id} value={String(s.id)}>
+                                    {s.name}
+                                </DropdownMenuRadioItem>
+                            ))}
+                        </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                </DropdownMenu>
             </div>
 
             <Card className="border-none shadow-md">
@@ -348,14 +456,14 @@ export default function ScenariosPage() {
                                         </td>
                                     </tr>
                                 )}
-                                {!isListLoading && !listError && scenarios.length === 0 && (
+                                {!isListLoading && !listError && filteredScenarios.length === 0 && (
                                     <tr>
                                         <td colSpan={6} className="h-24 text-center text-muted-foreground">
                                             No se encontraron escenarios con los filtros actuales.
                                         </td>
                                     </tr>
                                 )}
-                                {!isListLoading && !listError && scenarios.map((s, index) => (
+                                {!isListLoading && !listError && filteredScenarios.map((s, index) => (
                                     <tr key={s.id} className="border-b transition-colors hover:bg-muted/50">
                                         <td className="px-4 py-4 font-mono text-xs text-muted-foreground">
                                             {`SC-${String(index + 1).padStart(3, "0")}`}
