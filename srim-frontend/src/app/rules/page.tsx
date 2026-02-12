@@ -15,7 +15,6 @@ import {
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
@@ -153,7 +152,7 @@ export default function RulesPage() {
         actionTypeName: a.action_type_name,
         description: a.description,
       })),
-      scenarioId: '',
+      scenarioId: scenarios.find(s => s.rules?.includes(rule.id))?.id || '',
     });
     setIsDialogOpen(true);
   }
@@ -236,6 +235,22 @@ export default function RulesPage() {
           ),
         ]);
 
+        const oldScenario = scenarios.find(s => s.rules?.includes(editingRule.id));
+        const newScenarioId = formData.scenarioId;
+
+        if (oldScenario?.id !== newScenarioId) {
+          if (oldScenario) {
+            try {
+              await scenarioService.unlinkScenarioRule(oldScenario.id, editingRule.id);
+            } catch (e) {
+              console.warn("Could not unlink from previous scenario", e);
+            }
+          }
+          if (newScenarioId) {
+            await scenarioService.createScenarioRule(newScenarioId, editingRule.id);
+          }
+        }
+
         toast({
           title: "Regla Actualizada",
           description: `Se han guardado los cambios en la regla ${editingRule.id}.`
@@ -273,7 +288,9 @@ export default function RulesPage() {
       }
 
       const updatedRules = await rulesService.getRules();
+      const updatedScenarios = await scenarioService.getAll();
       setRules(updatedRules);
+      setScenarios(updatedScenarios);
       setIsDialogOpen(false);
     } catch (err) {
       console.error(err);
@@ -532,12 +549,7 @@ export default function RulesPage() {
               </CardHeader>
               <CardContent className="flex-1 flex flex-col">
                 <div className="mt-2 space-y-1">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Acciones ({rule.actions.length}):</p>
-                  {rule.actions.map((a, i) => (
-                    <div key={i} className="text-[11px] flex items-center gap-1">
-                      <Zap className="h-2 w-2 text-accent" /> {a.description}
-                    </div>
-                  ))}
+                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Acciones ({rule.actions.length})</p>
                 </div>
                 <div className="flex items-center justify-between text-xs mt-auto pt-4">
                   <span className="font-semibold text-muted-foreground uppercase tracking-tight">{rule.dimension_name}</span>

@@ -104,8 +104,8 @@ export type ApiScenarioHistory = {
 export interface CreateScenarioDTO {
     title: string;
     description?: string | null;
-    process: number;
-    status: number;
+    process: number | string;
+    status: number | string;
 }
 
 export const SCENARIO_STATUS_LABELS: Record<ScenarioStatusCode, string> = {
