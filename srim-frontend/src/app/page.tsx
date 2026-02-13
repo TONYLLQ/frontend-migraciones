@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { scenarioService } from '@/features/scenarios/service'
+import { executionsService } from '@/features/executions/service'
 import { SCENARIO_STATUS_LABELS, type Scenario, type ScenarioStatusCode } from '@/features/scenarios/types'
 
 const STATUS_COLORS: Record<ScenarioStatusCode, string> = {
@@ -40,26 +41,72 @@ const QUALITY_TREND = [
   { month: 'Mar', integrity: 95, uniqueness: 98, exactness: 92 },
 ]
 
-const PIE_DATA = [
-  { name: 'Integridad', value: 45, color: '#34495E' },
-  { name: 'Unicidad', value: 25, color: '#008080' },
-  { name: 'Consistencia', value: 20, color: '#2C3E50' },
-  { name: 'Exactitud', value: 10, color: '#7F8C8D' },
-]
+const DIMENSION_COLORS = ['#34495E', '#008080', '#2C3E50', '#7F8C8D', '#0F766E', '#1F2937']
+const STATUS_CODE_MAP: Record<string, ScenarioStatusCode> = {
+  REGISTERED: 'REGISTRADO',
+  ASSIGNED: 'ASIGNADO',
+  ANALYSIS: 'ANALISIS',
+  EVALUATION: 'EVALUACION',
+  VALIDATION: 'VALIDACION',
+  ACTION: 'ACCION',
+  MONITORING: 'MONITOREO',
+  REGISTRADO: 'REGISTRADO',
+  ASIGNADO: 'ASIGNADO',
+  ANALISIS: 'ANALISIS',
+  EVALUACION: 'EVALUACION',
+  VALIDACION: 'VALIDACION',
+  ACCION: 'ACCION',
+  MONITOREO: 'MONITOREO',
+}
 
 export default function DashboardPage() {
   const [scenarios, setScenarios] = useState<Scenario[]>([])
   const [isLoading, setIsLoading] = useState(false)
+  const [observedRulesCount, setObservedRulesCount] = useState<number | null>(null)
+  const [observedRulesSum, setObservedRulesSum] = useState<number | null>(null)
+  const [observedDimensions, setObservedDimensions] = useState<
+    { name: string; code: string; count: number }[]
+  >([])
+  const [assignedStatusCounts, setAssignedStatusCounts] = useState<Record<string, number>>({})
 
   useEffect(() => {
     let active = true
     const load = async () => {
       setIsLoading(true)
       try {
-        const data = await scenarioService.getAll()
-        if (active) setScenarios(data)
+        const [scenarioData, observed, dimensions, assignedStatus] = await Promise.all([
+          scenarioService.getAll(),
+          executionsService.getObservedRulesCount(),
+          executionsService.getObservedRulesByDimension(),
+          scenarioService.getAssignedStatusDistribution(),
+        ])
+        if (active) {
+          setScenarios(scenarioData)
+          setObservedRulesCount(observed.count)
+          setObservedRulesSum(observed.total_rows)
+          setObservedDimensions(
+            (dimensions || []).map((d) => ({
+              name: d.dimension__name,
+              code: d.dimension__code,
+              count: d.count,
+            }))
+          )
+          setAssignedStatusCounts(
+            (assignedStatus || []).reduce((acc, item) => {
+              const normalized = STATUS_CODE_MAP[item.status__code] ?? item.status__code
+              acc[normalized] = item.count
+              return acc
+            }, {} as Record<string, number>)
+          )
+        }
       } catch {
-        if (active) setScenarios([])
+        if (active) {
+          setScenarios([])
+          setObservedRulesCount(0)
+          setObservedRulesSum(0)
+          setObservedDimensions([])
+          setAssignedStatusCounts({})
+        }
       } finally {
         if (active) setIsLoading(false)
       }
@@ -70,30 +117,22 @@ export default function DashboardPage() {
     }
   }, [])
 
-  const scenarioCounts = useMemo(() => {
-    const counts: Record<ScenarioStatusCode, number> = {
-      REGISTRADO: 0,
-      ASIGNADO: 0,
-      ANALISIS: 0,
-      EVALUACION: 0,
-      VALIDACION: 0,
-      ACCION: 0,
-      MONITOREO: 0,
-    }
-    scenarios.forEach((s) => {
-      const code = s.status_code
-      if (code && counts[code] !== undefined) counts[code] += 1
-    })
-    return counts
-  }, [scenarios])
-
   const scenarioChartData = useMemo(() => {
     return (Object.keys(SCENARIO_STATUS_LABELS) as ScenarioStatusCode[]).map((code) => ({
       name: SCENARIO_STATUS_LABELS[code],
-      count: scenarioCounts[code] ?? 0,
+      count: assignedStatusCounts[code] ?? 0,
       fill: STATUS_COLORS[code],
     }))
-  }, [scenarioCounts])
+  }, [assignedStatusCounts])
+
+  const pieData = useMemo(() => {
+    if (!observedDimensions.length) return []
+    return observedDimensions.map((d, index) => ({
+      name: d.name,
+      value: d.count,
+      color: DIMENSION_COLORS[index % DIMENSION_COLORS.length],
+    }))
+  }, [observedDimensions])
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
@@ -118,8 +157,8 @@ export default function DashboardPage() {
         />
         <StatsCard
           title="Reglas Observadas"
-          value="18"
-          change="-2 este periodo"
+          value={isLoading ? "..." : String(observedRulesCount ?? 0)}
+          change={`Total de registros observados: ${isLoading ? "..." : String(observedRulesSum ?? 0)}`}
           icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
           trend="down"
         />
@@ -172,11 +211,11 @@ export default function DashboardPage() {
             <CardDescription>Principales focos de reglas activas.</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full">
+            <div className="h-[220px] w-full">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
-                    data={PIE_DATA}
+                    data={pieData}
                     cx="50%"
                     cy="50%"
                     innerRadius={60}
@@ -184,18 +223,18 @@ export default function DashboardPage() {
                     paddingAngle={5}
                     dataKey="value"
                   >
-                    {PIE_DATA.map((entry, index) => (
+                    {pieData.map((entry, index) => (
                       <Cell key={`cell-${index}`} fill={entry.color} />
                     ))}
                   </Pie>
                   <Tooltip />
                 </PieChart>
               </ResponsiveContainer>
-              <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                {PIE_DATA.map((entry) => (
+              <div className="mt-4 flex flex-wrap gap-x-4 gap-y-2 text-xs">
+                {pieData.map((entry) => (
                   <div key={entry.name} className="flex items-center gap-2">
                     <div className="h-3 w-3 rounded-full" style={{ backgroundColor: entry.color }} />
-                    <span className="text-muted-foreground">{entry.name}</span>
+                    <span className="whitespace-nowrap text-muted-foreground">{entry.name}</span>
                   </div>
                 ))}
               </div>

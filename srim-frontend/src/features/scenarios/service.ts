@@ -6,6 +6,12 @@ export const scenarioService = {
         const { data } = await http.get<Scenario[]>("/api/scenarios/scenarios/");
         return data;
     },
+    getAssignedStatusDistribution: async () => {
+        const { data } = await http.get<
+            { status__code: string; status__name: string; count: number }[]
+        >("/api/scenarios/scenarios/status-distribution-assigned/");
+        return data;
+    },
 
     getById: async (id: string) => {
         const { data } = await http.get<Scenario>(`/api/scenarios/scenarios/${id}/`);

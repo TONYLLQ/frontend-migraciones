@@ -29,4 +29,16 @@ export const executionsService = {
     );
     return data;
   },
+  getObservedRulesCount: async () => {
+    const { data } = await http.get<{ count: number; total_rows: number }>(
+      "/api/executions/executions/observed-rules-count/"
+    );
+    return data;
+  },
+  getObservedRulesByDimension: async () => {
+    const { data } = await http.get<
+      { dimension__id: number; dimension__code: string; dimension__name: string; count: number }[]
+    >("/api/executions/executions/observed-rules-by-dimension/");
+    return data;
+  },
 };
