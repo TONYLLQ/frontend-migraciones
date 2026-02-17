@@ -28,6 +28,7 @@ export interface DataQualityRule {
   isActive: boolean;
   dimension: RuleDimension;
   sqlQuery: string;
+  sqlQueryConsistent?: string;
   actions: DataQualityRuleAction[];
 }
 

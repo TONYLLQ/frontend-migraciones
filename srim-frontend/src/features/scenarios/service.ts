@@ -1,5 +1,6 @@
 import { http } from "@/lib/http";
-import { type CreateScenarioDTO, type Scenario, type ApiScenarioProcess, type ApiScenarioStatus, type ApiScenarioTransition } from "./types";
+import { getAuthToken } from "@/lib/auth";
+import { type CreateScenarioDTO, type Scenario, type ApiScenarioProcess, type ApiScenarioStatus, type ApiScenarioTransition, type ApiScenarioDocument } from "./types";
 
 export const scenarioService = {
     getAll: async () => {
@@ -29,7 +30,10 @@ export const scenarioService = {
         if (payload.process) form.append("process", String(payload.process));
         if (payload.status) form.append("status", String(payload.status));
         if (file) form.append("archive", file);
-        const { data } = await http.post<Scenario>("/api/scenarios/scenarios/", form);
+        const token = getAuthToken();
+        const { data } = await http.post<Scenario>("/api/scenarios/scenarios/", form, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         return data;
     },
     updateWithFile: async (scenarioId: string, payload: Partial<CreateScenarioDTO>, file?: File | null) => {
@@ -39,7 +43,10 @@ export const scenarioService = {
         if (payload.process) form.append("process", String(payload.process));
         if (payload.status) form.append("status", String(payload.status));
         if (file) form.append("archive", file);
-        const { data } = await http.patch<Scenario>(`/api/scenarios/scenarios/${scenarioId}/`, form);
+        const token = getAuthToken();
+        const { data } = await http.patch<Scenario>(`/api/scenarios/scenarios/${scenarioId}/`, form, {
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
         return data;
     },
     getProcesses: async () => {
@@ -79,5 +86,24 @@ export const scenarioService = {
             analyst: analystId,
         });
         return data;
+    },
+    getDocuments: async (scenarioId: string) => {
+        const { data } = await http.get<ApiScenarioDocument[]>(`/api/scenarios/documents/?scenario=${scenarioId}`);
+        return data;
+    },
+    uploadDocument: async (payload: { scenario: string; status: number; file: File }) => {
+        const form = new FormData();
+        form.append("scenario", payload.scenario);
+        form.append("status", String(payload.status));
+        form.append("file", payload.file);
+        const { data } = await http.post<ApiScenarioDocument>("/api/scenarios/documents/", form);
+        return data;
+    },
+    validateDocument: async (documentId: string) => {
+        const { data } = await http.post<ApiScenarioDocument>(`/api/scenarios/documents/${documentId}/validate/`);
+        return data;
+    },
+    deleteDocument: async (documentId: string) => {
+        await http.delete(`/api/scenarios/documents/${documentId}/`);
     },
 };

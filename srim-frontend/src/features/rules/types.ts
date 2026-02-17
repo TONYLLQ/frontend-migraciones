@@ -30,6 +30,7 @@ export type ApiQualityRule = {
   dimension_name: string;
   is_active: boolean;
   sql_query: string | null;
+  sql_query_consistent?: string | null;
   actions: ApiRuleAction[];
 };
 
@@ -38,6 +39,7 @@ export type CreateRulePayload = {
   dimension: number;
   is_active?: boolean;
   sql_query?: string | null;
+  sql_query_consistent?: string | null;
 };
 
 export type UpdateRulePayload = Partial<CreateRulePayload>;

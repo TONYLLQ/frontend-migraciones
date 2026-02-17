@@ -37,6 +37,10 @@ import { rulesService } from '@/features/rules/service'
 import type { ApiQualityRule, ApiActionType, ApiRuleDimension } from '@/features/rules/types'
 import type { Scenario } from '@/features/scenarios/types'
 import { scenarioService } from '@/features/scenarios/service'
+import { dataDictionaryService } from '@/features/data-dictionary/service'
+import type { ApiTableField, ApiTableCatalog } from '@/features/data-dictionary/types'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import { Checkbox } from '@/components/ui/checkbox'
 
 type FormRuleAction = {
   id?: number;
@@ -51,6 +55,8 @@ export default function RulesPage() {
   const [dimensions, setDimensions] = useState<ApiRuleDimension[]>([])
   const [actionTypes, setActionTypes] = useState<ApiActionType[]>([])
   const [scenarios, setScenarios] = useState<Scenario[]>([])
+  const [fields, setFields] = useState<ApiTableField[]>([])
+  const [tables, setTables] = useState<ApiTableCatalog[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [isDialogOpen, setIsDialogOpen] = useState(false)
@@ -62,9 +68,11 @@ export default function RulesPage() {
     name: '',
     dimensionId: 0,
     sql: '',
+    sqlConsistent: '',
     isActive: true,
     actions: [] as FormRuleAction[],
-    scenarioId: ''
+    scenarioId: '',
+    fieldIds: [] as number[],
   })
 
   const [newAction, setNewAction] = useState<FormRuleAction>({
@@ -77,6 +85,7 @@ export default function RulesPage() {
   const [isSqlDialogOpen, setIsSqlDialogOpen] = useState(false)
 
   const [selectedDimensionFilter, setSelectedDimensionFilter] = useState<number | 'all'>('all')
+  const [fieldSearch, setFieldSearch] = useState("")
 
   const canEdit = isCoordinator || isAnalyst;
   const isTechnical = isCoordinator || isAnalyst;
@@ -87,17 +96,21 @@ export default function RulesPage() {
       setIsLoading(true);
       setLoadError(null);
       try {
-        const [rulesData, dims, actions, scenariosData] = await Promise.all([
+        const [rulesData, dims, actions, scenariosData, fieldsData, tablesData] = await Promise.all([
           rulesService.getRules(),
           rulesService.getDimensions(),
           rulesService.getActionTypes(),
           scenarioService.getAll(),
+          dataDictionaryService.getFields(),
+          dataDictionaryService.getTables(),
         ]);
         if (!active) return;
         setRules(rulesData);
         setDimensions(dims);
         setActionTypes(actions);
         setScenarios(scenariosData);
+        setFields(fieldsData);
+        setTables(tablesData);
         setFormData((prev) => ({
           ...prev,
           dimensionId: dims[0]?.id ?? 0,
@@ -126,9 +139,11 @@ export default function RulesPage() {
       name: '',
       dimensionId: dimensions[0]?.id ?? 0,
       sql: '',
+      sqlConsistent: '',
       isActive: true,
       actions: [],
       scenarioId: '',
+      fieldIds: [],
     });
     const defaultType = actionTypes[0];
     setNewAction({
@@ -145,6 +160,7 @@ export default function RulesPage() {
       name: rule.name,
       dimensionId: rule.dimension,
       sql: rule.sql_query ?? '',
+      sqlConsistent: rule.sql_query_consistent ?? '',
       isActive: rule.is_active,
       actions: rule.actions.map((a) => ({
         id: a.id,
@@ -153,6 +169,9 @@ export default function RulesPage() {
         description: a.description,
       })),
       scenarioId: scenarios.find(s => s.rules?.includes(rule.id))?.id || '',
+      fieldIds: fields
+        .filter((f) => (f.analysis_rules || []).includes(rule.id))
+        .map((f) => f.id),
     });
     setIsDialogOpen(true);
   }
@@ -218,6 +237,7 @@ export default function RulesPage() {
           dimension: formData.dimensionId,
           is_active: formData.isActive,
           sql_query: formData.sql || null,
+          sql_query_consistent: formData.sqlConsistent || null,
         });
 
         const currentIds = new Set(formData.actions.filter((a) => a.id).map((a) => a.id as number));
@@ -234,6 +254,24 @@ export default function RulesPage() {
             })
           ),
         ]);
+
+        const desired = new Set(formData.fieldIds);
+        const updates: Promise<any>[] = [];
+        fields.forEach((field) => {
+          const current = new Set(field.analysis_rules || []);
+          const hasRule = current.has(editingRule.id);
+          const wantsRule = desired.has(field.id);
+          if (hasRule === wantsRule) return;
+          const nextRules = new Set(current);
+          if (wantsRule) nextRules.add(editingRule.id);
+          else nextRules.delete(editingRule.id);
+          updates.push(
+            dataDictionaryService.updateField(field.id, { analysis_rules: Array.from(nextRules) })
+          );
+        });
+        if (updates.length > 0) {
+          await Promise.all(updates);
+        }
 
         const oldScenario = scenarios.find(s => s.rules?.includes(editingRule.id));
         const newScenarioId = formData.scenarioId;
@@ -261,6 +299,7 @@ export default function RulesPage() {
           dimension: formData.dimensionId,
           is_active: formData.isActive,
           sql_query: formData.sql || null,
+          sql_query_consistent: formData.sqlConsistent || null,
         });
 
         if (formData.actions.length > 0) {
@@ -272,6 +311,17 @@ export default function RulesPage() {
                 description: a.description,
               })
             )
+          );
+        }
+
+        if (formData.fieldIds.length > 0) {
+          await Promise.all(
+            formData.fieldIds.map((fieldId) => {
+              const field = fields.find((f) => f.id === fieldId);
+              const current = new Set(field?.analysis_rules || []);
+              current.add(created.id);
+              return dataDictionaryService.updateField(fieldId, { analysis_rules: Array.from(current) });
+            })
           );
         }
 
@@ -288,8 +338,10 @@ export default function RulesPage() {
       }
 
       const updatedRules = await rulesService.getRules();
+      const updatedFields = await dataDictionaryService.getFields();
       const updatedScenarios = await scenarioService.getAll();
       setRules(updatedRules);
+      setFields(updatedFields);
       setScenarios(updatedScenarios);
       setIsDialogOpen(false);
     } catch (err) {
@@ -410,6 +462,78 @@ export default function RulesPage() {
               </div>
             )}
 
+            {isTechnical && (
+              <div className="grid gap-2">
+                <Label>Consulta SQL de Consistencia</Label>
+                <Textarea
+                  placeholder="SELECT * FROM table WHERE column IS NOT NULL..."
+                  className="font-mono text-xs min-h-[100px]"
+                  value={formData.sqlConsistent}
+                  onChange={(e) => setFormData({ ...formData, sqlConsistent: e.target.value })}
+                />
+              </div>
+            )}
+
+            <div className="grid gap-2">
+              <Label>Campos asociados (diccionario)</Label>
+              <div className="rounded-md border p-3">
+                {fields.length === 0 ? (
+                  <div className="text-xs text-muted-foreground">
+                    No hay campos en el diccionario.
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <Input
+                      placeholder="Buscar campo o tabla..."
+                      value={fieldSearch}
+                      onChange={(e) => setFieldSearch(e.target.value)}
+                    />
+                    <ScrollArea className="h-36">
+                      <div className="space-y-2 pr-2">
+                        {fields
+                          .filter((field) => {
+                            const table = tables.find((t) => t.id === field.table);
+                            const tableLabel = table
+                              ? `${table.schema ? `${table.schema}.` : ''}${table.name}`
+                              : `Tabla ${field.table}`;
+                            const term = fieldSearch.trim().toLowerCase();
+                            if (!term) return true;
+                            return (
+                              field.name.toLowerCase().includes(term) ||
+                              tableLabel.toLowerCase().includes(term)
+                            );
+                          })
+                          .map((field) => {
+                        const table = tables.find((t) => t.id === field.table);
+                        const tableLabel = table ? `${table.schema ? `${table.schema}.` : ''}${table.name}` : `Tabla ${field.table}`;
+                        const checked = formData.fieldIds.includes(field.id);
+                        return (
+                          <label key={field.id} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(value) => {
+                                const isChecked = value === true;
+                                setFormData((prev) => ({
+                                  ...prev,
+                                  fieldIds: isChecked
+                                    ? [...prev.fieldIds, field.id]
+                                    : prev.fieldIds.filter((id) => id !== field.id),
+                                }));
+                              }}
+                            />
+                            <span className="text-sm">
+                              {tableLabel} · {field.name}
+                            </span>
+                          </label>
+                        );
+                      })}
+                      </div>
+                    </ScrollArea>
+                  </div>
+                )}
+              </div>
+            </div>
+
             <Separator />
 
             <div className="space-y-4">
@@ -479,6 +603,12 @@ export default function RulesPage() {
               <Label>SQL Query</Label>
               <div className="rounded-md bg-muted p-4 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
                 {viewingSqlRule?.sql_query || "-- No hay consulta SQL definida --"}
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>SQL Consistencia</Label>
+              <div className="rounded-md bg-muted p-4 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
+                {viewingSqlRule?.sql_query_consistent || "-- No hay consulta SQL de consistencia --"}
               </div>
             </div>
           </div>

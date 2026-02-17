@@ -7,6 +7,7 @@ import NewScenarioPage from "@/app/scenarios/new/page";
 import ScenarioDetailPage from "@/app/scenarios/[id]/page";
 import LoginPage from "@/app/login/page";
 import PrivateRoute from "@/components/auth/private-route";
+import DataDictionaryPage from "@/app/data-dictionary/page";
 
 export default function App() {
   return (
@@ -21,6 +22,7 @@ export default function App() {
             <Route path="/scenarios" element={<ScenariosPage />} />
             <Route path="/scenarios/new" element={<NewScenarioPage />} />
             <Route path="/scenarios/:id" element={<ScenarioDetailPage />} />
+            <Route path="/data-dictionary" element={<DataDictionaryPage />} />
           </Route>
         </Route>
 

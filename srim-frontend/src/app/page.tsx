@@ -64,6 +64,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [observedRulesCount, setObservedRulesCount] = useState<number | null>(null)
   const [observedRulesSum, setObservedRulesSum] = useState<number | null>(null)
+  const [qualityRate, setQualityRate] = useState<number | null>(null)
   const [observedDimensions, setObservedDimensions] = useState<
     { name: string; code: string; count: number }[]
   >([])
@@ -74,16 +75,18 @@ export default function DashboardPage() {
     const load = async () => {
       setIsLoading(true)
       try {
-        const [scenarioData, observed, dimensions, assignedStatus] = await Promise.all([
+        const [scenarioData, observed, dimensions, assignedStatus, quality] = await Promise.all([
           scenarioService.getAll(),
           executionsService.getObservedRulesCount(),
           executionsService.getObservedRulesByDimension(),
           scenarioService.getAssignedStatusDistribution(),
+          executionsService.getQualityRate(),
         ])
         if (active) {
           setScenarios(scenarioData)
           setObservedRulesCount(observed.count)
           setObservedRulesSum(observed.total_rows)
+          setQualityRate(quality.rate)
           setObservedDimensions(
             (dimensions || []).map((d) => ({
               name: d.dimension__name,
@@ -104,6 +107,7 @@ export default function DashboardPage() {
           setScenarios([])
           setObservedRulesCount(0)
           setObservedRulesSum(0)
+          setQualityRate(0)
           setObservedDimensions([])
           setAssignedStatusCounts({})
         }
@@ -168,13 +172,48 @@ export default function DashboardPage() {
           change="3 críticas"
           icon={<Clock className="h-5 w-5 text-destructive" />}
         />
-        <StatsCard
-          title="Tasa de Calidad"
-          value="95.4%"
-          change="+1.2% global"
-          icon={<CheckCircle2 className="h-5 w-5 text-emerald-500" />}
-          trend="up"
-        />
+        <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
+          <CardHeader className="flex flex-row items-start justify-between space-y-0 pb-2">
+            <div>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Tasa de Calidad</CardTitle>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-emerald-600">Mejora</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+              </div>
+            </div>
+            <div className="h-9 w-9 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center">
+              <CheckCircle2 className="h-5 w-5" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-end justify-between gap-3">
+              <div className="space-y-2">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold text-emerald-700">
+                    {isLoading ? "..." : `${(qualityRate ?? 0).toFixed(2)}%`}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Calculo global</span>
+                </div>
+                <div className="h-1.5 w-40 rounded-full bg-emerald-100">
+                  <div
+                    className="h-1.5 rounded-full bg-emerald-500 transition-all"
+                    style={{ width: `${Math.min(100, Math.max(0, qualityRate ?? 0))}%` }}
+                  />
+                </div>
+              </div>
+              <div className="relative">
+                <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-center">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-red-600">Brecha</div>
+                  <div className="text-lg font-bold text-red-700">
+                    {isLoading ? "..." : `${(100 - (qualityRate ?? 0)).toFixed(2)}%`}
+                  </div>
+                </div>
+                <div className="absolute -right-2 -top-2 h-4 w-4 rounded-full bg-red-500/20" />
+                <div className="absolute -left-2 -bottom-2 h-3 w-3 rounded-full bg-red-500/10" />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-7">
@@ -289,3 +328,5 @@ function StatsCard({ title, value, change, icon, trend = 'neutral' }: {
     </Card>
   )
 }
+
+

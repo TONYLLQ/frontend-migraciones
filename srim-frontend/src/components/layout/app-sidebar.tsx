@@ -8,7 +8,8 @@ import {
   Search,
   PieChart,
   LogOut,
-  ChevronDown
+  ChevronDown,
+  BookOpen
 } from "lucide-react"
 
 import {
@@ -88,6 +89,14 @@ export function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               )}
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={pathname.startsWith("/data-dictionary")}>
+                  <Link to="/data-dictionary">
+                    <BookOpen className="h-4 w-4" />
+                    <span>Diccionario</span>
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
