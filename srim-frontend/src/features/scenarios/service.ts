@@ -1,9 +1,16 @@
 import { http } from "@/lib/http";
-import { type CreateScenarioDTO, type Scenario, type ApiScenarioProcess, type ApiScenarioStatus, type ApiScenarioTransition } from "./types";
+import { getAuthToken } from "@/lib/auth";
+import { type CreateScenarioDTO, type Scenario, type ApiScenarioProcess, type ApiScenarioStatus, type ApiScenarioTransition, type ApiScenarioDocument } from "./types";
 
 export const scenarioService = {
     getAll: async () => {
         const { data } = await http.get<Scenario[]>("/api/scenarios/scenarios/");
+        return data;
+    },
+    getAssignedStatusDistribution: async () => {
+        const { data } = await http.get<
+            { status__code: string; status__name: string; count: number }[]
+        >("/api/scenarios/scenarios/status-distribution-assigned/");
         return data;
     },
 
@@ -20,11 +27,12 @@ export const scenarioService = {
         const form = new FormData();
         form.append("title", payload.title);
         if (payload.description) form.append("description", payload.description);
-        form.append("process", String(payload.process));
-        form.append("status", String(payload.status));
+        if (payload.process) form.append("process", String(payload.process));
+        if (payload.status) form.append("status", String(payload.status));
         if (file) form.append("archive", file);
+        const token = getAuthToken();
         const { data } = await http.post<Scenario>("/api/scenarios/scenarios/", form, {
-            headers: { "Content-Type": "multipart/form-data" },
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         return data;
     },
@@ -35,8 +43,9 @@ export const scenarioService = {
         if (payload.process) form.append("process", String(payload.process));
         if (payload.status) form.append("status", String(payload.status));
         if (file) form.append("archive", file);
+        const token = getAuthToken();
         const { data } = await http.patch<Scenario>(`/api/scenarios/scenarios/${scenarioId}/`, form, {
-            headers: { "Content-Type": "multipart/form-data" },
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
         return data;
     },
@@ -77,5 +86,24 @@ export const scenarioService = {
             analyst: analystId,
         });
         return data;
+    },
+    getDocuments: async (scenarioId: string) => {
+        const { data } = await http.get<ApiScenarioDocument[]>(`/api/scenarios/documents/?scenario=${scenarioId}`);
+        return data;
+    },
+    uploadDocument: async (payload: { scenario: string; status: number; file: File }) => {
+        const form = new FormData();
+        form.append("scenario", payload.scenario);
+        form.append("status", String(payload.status));
+        form.append("file", payload.file);
+        const { data } = await http.post<ApiScenarioDocument>("/api/scenarios/documents/", form);
+        return data;
+    },
+    validateDocument: async (documentId: string) => {
+        const { data } = await http.post<ApiScenarioDocument>(`/api/scenarios/documents/${documentId}/validate/`);
+        return data;
+    },
+    deleteDocument: async (documentId: string) => {
+        await http.delete(`/api/scenarios/documents/${documentId}/`);
     },
 };

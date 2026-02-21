@@ -72,6 +72,7 @@ export interface Scenario {
     rules?: string[];
     operational_actions?: ApiScenarioOperationalAction[];
     history?: ApiScenarioHistory[];
+    documents?: ApiScenarioDocument[];
 }
 
 export type ApiScenarioOperationalAction = {
@@ -101,11 +102,27 @@ export type ApiScenarioHistory = {
     comment: string | null;
 };
 
+export type ApiScenarioDocument = {
+    id: string;
+    scenario: string;
+    status: number;
+    status_code: string;
+    status_name: string;
+    file: string;
+    uploaded_by: string | null;
+    uploaded_by_email: string | null;
+    uploaded_at: string;
+    is_validated: boolean;
+    validated_by: string | null;
+    validated_by_email: string | null;
+    validated_at: string | null;
+};
+
 export interface CreateScenarioDTO {
     title: string;
     description?: string | null;
-    process: number;
-    status: number;
+    process: number | string;
+    status: number | string;
 }
 
 export const SCENARIO_STATUS_LABELS: Record<ScenarioStatusCode, string> = {

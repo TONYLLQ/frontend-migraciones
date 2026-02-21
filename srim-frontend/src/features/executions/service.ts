@@ -8,6 +8,7 @@ export type RuleExecution = {
   requested_by?: string | null;
   sql_snapshot?: string | null;
   rows_affected?: number | null;
+  execution_mode?: "inconsistent" | "consistent" | string;
   result_sample?: unknown;
   error_message?: string | null;
   started_at?: string | null;
@@ -16,10 +17,10 @@ export type RuleExecution = {
 };
 
 export const executionsService = {
-  execute: async (ruleId: string, scenarioId: string) => {
+  execute: async (ruleId: string, scenarioId: string, mode: "inconsistent" | "consistent" = "inconsistent") => {
     const { data } = await http.post<RuleExecution>(
       "/api/executions/executions/execute/",
-      { rule: ruleId, scenario: scenarioId }
+      { rule: ruleId, scenario: scenarioId, mode }
     );
     return data;
   },
@@ -27,6 +28,26 @@ export const executionsService = {
     const { data } = await http.get<RuleExecution>(
       `/api/executions/executions/${executionId}/`
     );
+    return data;
+  },
+  getObservedRulesCount: async () => {
+    const { data } = await http.get<{ count: number; total_rows: number }>(
+      "/api/executions/executions/observed-rules-count/"
+    );
+    return data;
+  },
+  getObservedRulesByDimension: async () => {
+    const { data } = await http.get<
+      { dimension__id: number; dimension__code: string; dimension__name: string; count: number }[]
+    >("/api/executions/executions/observed-rules-by-dimension/");
+    return data;
+  },
+  getQualityRate: async () => {
+    const { data } = await http.get<{
+      inconsistent: number;
+      consistent: number;
+      rate: number | null;
+    }>("/api/executions/executions/quality-rate/");
     return data;
   },
 };

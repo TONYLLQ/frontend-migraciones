@@ -5,7 +5,7 @@ import { Link, useParams } from 'react-router-dom'
 import { scenarioService } from '@/features/scenarios/service'
 import { rulesService } from '@/features/rules/service'
 import { executionsService } from '@/features/executions/service'
-import type { Scenario, ApiScenarioStatus, ApiScenarioTransition } from '@/features/scenarios/types'
+import type { Scenario, ApiScenarioStatus, ApiScenarioTransition, ApiScenarioDocument } from '@/features/scenarios/types'
 import type { ApiQualityRule } from '@/features/rules/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -19,7 +19,6 @@ import {
   ArrowLeft,
   Upload,
   Play,
-  CheckCircle,
   Clock,
   ExternalLink,
   PlusCircle,
@@ -133,13 +132,14 @@ const mapRule = (rule: ApiQualityRule): DataQualityRule => ({
   isActive: rule.is_active,
   dimension: mapDimension(rule.dimension_name || rule.dimension_code),
   sqlQuery: rule.sql_query || '',
+  sqlQueryConsistent: rule.sql_query_consistent || '',
   actions: rule.actions.map((a) => ({
     type: mapActionType(a.action_type_name || a.action_type_code),
     description: a.description,
   }))
 })
 
-  const mapScenario = (api: Scenario, rulesCatalog: ApiQualityRule[]): DataQualityScenario => {
+const mapScenario = (api: Scenario, rulesCatalog: ApiQualityRule[]): DataQualityScenario => {
   const rulesMap = new Map(rulesCatalog.map((r) => [r.id, r]))
   const rules: DataQualityRule[] = (api.rules || [])
     .map((id) => rulesMap.get(id))
@@ -174,6 +174,9 @@ const mapRule = (rule: ApiQualityRule): DataQualityRule => ({
     actions,
     history,
     documents: [],
+    archive: api.archive,
+    archiveUploadedAt: api.archive_uploaded_at,
+    archiveStageId: api.archive_stage,
   }
 }
 
@@ -189,6 +192,8 @@ export default function ScenarioDetailPage() {
   const [isLinkingOpen, setIsLinkingOpen] = useState(false)
   const [uploadFile, setUploadFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
+  const [documents, setDocuments] = useState<ApiScenarioDocument[]>([])
+  const [uploadStatusId, setUploadStatusId] = useState<number | null>(null)
   const [isAdvancing, setIsAdvancing] = useState(false)
   const [needsRuleOpen, setNeedsRuleOpen] = useState(false)
   const [cannotUnlinkOpen, setCannotUnlinkOpen] = useState(false)
@@ -196,7 +201,7 @@ export default function ScenarioDetailPage() {
   const [analysts, setAnalysts] = useState<User[]>([])
   const [selectedAnalyst, setSelectedAnalyst] = useState("")
   const [isAssigning, setIsAssigning] = useState(false)
-  const [executingRuleId, setExecutingRuleId] = useState<string | null>(null)
+  const [executingRuleKey, setExecutingRuleKey] = useState<string | null>(null)
   const { user, isCoordinator, isAnalyst } = useCurrentUser()
 
   useEffect(() => {
@@ -206,11 +211,12 @@ export default function ScenarioDetailPage() {
       setIsLoading(true)
       setError(null)
       try {
-        const [scenarioApi, rulesApi, statusApi, transitionApi] = await Promise.all([
+        const [scenarioApi, rulesApi, statusApi, transitionApi, docsApi] = await Promise.all([
           scenarioService.getById(id),
           rulesService.getRules(),
           scenarioService.getStatuses(),
           scenarioService.getTransitions(),
+          scenarioService.getDocuments(id),
         ])
         if (!active) return
         setRulesCatalog(rulesApi)
@@ -218,6 +224,7 @@ export default function ScenarioDetailPage() {
         setTransitions(transitionApi)
         setScenarioApi(scenarioApi)
         setScenario(mapScenario(scenarioApi, rulesApi))
+        setDocuments(docsApi)
       } catch (err) {
         console.error(err)
         if (active) setError('No se pudo cargar el escenario.')
@@ -248,6 +255,14 @@ export default function ScenarioDetailPage() {
     }
   }, [])
 
+  useEffect(() => {
+    if (uploadStatusId) return
+    if (!statuses.length) return
+    const currentCode = (scenarioApi?.status_code as unknown as string) || (scenarioApi?.status as unknown as string)
+    const match = statuses.find((s) => s.code === currentCode)
+    setUploadStatusId(match?.id ?? statuses[0].id)
+  }, [statuses, scenarioApi, uploadStatusId])
+
   const actionsByRule = useMemo(() => {
     const map: Record<string, ScenarioAction[]> = {}
     if (!scenario) return map
@@ -259,6 +274,15 @@ export default function ScenarioDetailPage() {
     })
     return map
   }, [scenario])
+
+  const groupedDocs = useMemo(() => {
+    const map: Record<number, ApiScenarioDocument[]> = {}
+    documents.forEach((doc) => {
+      if (!map[doc.status]) map[doc.status] = []
+      map[doc.status].push(doc)
+    })
+    return map
+  }, [documents])
 
   if (isLoading) {
     return (
@@ -285,21 +309,23 @@ export default function ScenarioDetailPage() {
   const isAssignedToMe = scenario.analystId && (scenario.analystId === user?.id || scenario.analystId === user?.email)
   const canModify = isCoordinator || (isAnalyst && isAssignedToMe)
   const isTechnical = isCoordinator || isAnalyst
-  const canAdvance = isAnalyst && isAssignedToMe
-  const canFinalize = isAnalyst && isAssignedToMe
+  const canAdvance = isCoordinator || (isAnalyst && isAssignedToMe)
+  const canFinalize = isCoordinator || (isAnalyst && isAssignedToMe)
 
-  const handleExecuteRule = async (ruleId: string) => {
+  const handleExecuteRule = async (ruleId: string, mode: "inconsistent" | "consistent" = "inconsistent") => {
     if (!scenarioApi) return
-    setExecutingRuleId(ruleId)
+    const key = `${ruleId}:${mode}`
+    setExecutingRuleKey(key)
     try {
-      const execution = await executionsService.execute(ruleId, scenarioApi.id)
+      const execution = await executionsService.execute(ruleId, scenarioApi.id, mode)
       toast({ title: 'Ejecucion iniciada', description: 'ID: ' + execution.id })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      const detail = err?.response?.data?.detail
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail
       toast({ variant: 'destructive', title: 'Error', description: detail || 'No se pudo ejecutar la regla.' })
     } finally {
-      setExecutingRuleId(null)
+      setExecutingRuleKey(null)
     }
   }
 
@@ -317,9 +343,10 @@ export default function ScenarioDetailPage() {
       setScenario(mapScenario(refreshed, rulesCatalog))
       setIsLinkingOpen(false)
       toast({ title: "Regla Vinculada", description: `Se ha añadido '${rule.name}'.` })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      const detail = err?.response?.data?.detail
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail
       toast({ variant: "destructive", title: "Error", description: detail || "No se pudo vincular la regla." })
     }
   }
@@ -364,9 +391,10 @@ export default function ScenarioDetailPage() {
       setScenarioApi(refreshed)
       setScenario(mapScenario(refreshed, rulesCatalog))
       toast({ title: "Etapa actualizada" })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      const detail = err?.response?.data?.detail
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail
       toast({ variant: "destructive", title: "No se pudo avanzar", description: detail || "Revisa las reglas de transición." })
     } finally {
       setIsAdvancing(false)
@@ -396,15 +424,18 @@ export default function ScenarioDetailPage() {
   }
 
   const handleUpload = async () => {
-    if (!scenarioApi || !uploadFile) return
+    if (!scenarioApi || !uploadFile || !uploadStatusId) return
     setIsUploading(true)
     try {
-      await scenarioService.updateWithFile(scenarioApi.id, {}, uploadFile)
-      const refreshed = await scenarioService.getById(scenarioApi.id)
-      setScenarioApi(refreshed)
-      setScenario(mapScenario(refreshed, rulesCatalog))
+      await scenarioService.uploadDocument({
+        scenario: scenarioApi.id,
+        status: uploadStatusId,
+        file: uploadFile,
+      })
+      const refreshedDocs = await scenarioService.getDocuments(scenarioApi.id)
+      setDocuments(refreshedDocs)
       setUploadFile(null)
-      toast({ title: "Archivo actualizado" })
+      toast({ title: "Archivo subido" })
     } catch (err) {
       console.error(err)
       toast({ variant: "destructive", title: "Error", description: "No se pudo subir el archivo." })
@@ -482,16 +513,14 @@ export default function ScenarioDetailPage() {
 
               return (
                 <div key={step} className="relative z-10 flex flex-col items-center gap-2 group">
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-full border-4 ${
-                    isCompleted ? 'bg-primary border-primary text-white' :
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full border-4 ${isCompleted ? 'bg-primary border-primary text-white' :
                     isCurrent ? 'bg-background border-accent text-accent animate-pulse' :
-                    'bg-background border-muted text-muted-foreground'
-                  } transition-all duration-300`}>
+                      'bg-background border-muted text-muted-foreground'
+                    } transition-all duration-300`}>
                     {isCompleted ? <CheckCircle2 className="h-6 w-6" /> : <span className="text-sm font-bold">{index + 1}</span>}
                   </div>
-                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${
-                    isCurrent ? 'text-accent' : isCompleted ? 'text-primary' : 'text-muted-foreground'
-                  }`}>
+                  <span className={`text-[10px] font-semibold uppercase tracking-wider ${isCurrent ? 'text-accent' : isCompleted ? 'text-primary' : 'text-muted-foreground'
+                    }`}>
                     {STEP_LABELS[step]}
                   </span>
                 </div>
@@ -506,7 +535,7 @@ export default function ScenarioDetailPage() {
           <Tabs defaultValue="rules" className="w-full">
             <TabsList className="bg-muted/50 p-1">
               <TabsTrigger value="rules" className="gap-2"><ShieldAlert className="h-4 w-4" /> Reglas Aplicadas ({scenario.rules.length})</TabsTrigger>
-              <TabsTrigger value="actions" className="gap-2"><Play className="h-4 w-4" /> Acciones ({scenario.actions.length})</TabsTrigger>
+              <TabsTrigger value="actions" className="gap-2"><Play className="h-4 w-4" /> Acciones ({scenario.rules.reduce((acc, r) => acc + r.actions.length, 0)})</TabsTrigger>
               <TabsTrigger value="docs" className="gap-2"><FileCode className="h-4 w-4" /> Docs</TabsTrigger>
             </TabsList>
 
@@ -521,17 +550,34 @@ export default function ScenarioDetailPage() {
                   </CardHeader>
                   <CardContent className="space-y-4">
                     {isTechnical && rule.sqlQuery && (
-                      <div className="rounded bg-slate-900 p-4 font-mono text-xs text-slate-100 overflow-x-auto">
-                        <code>{rule.sqlQuery}</code>
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">SQL inconsistencias</p>
+                        <div className="rounded bg-slate-900 p-4 font-mono text-xs text-slate-100 overflow-x-auto">
+                          <code>{rule.sqlQuery}</code>
+                        </div>
                       </div>
                     )}
 
                     {!rule.sqlQuery && isTechnical && (
                       <div className="p-3 bg-amber-50 text-amber-800 text-xs rounded border border-amber-200 flex items-center gap-2">
-                        <Clock className="h-4 w-4" /> Pendiente definición técnica SQL por Analista.
+                        <Clock className="h-4 w-4" /> Pendiente definicion tecnica SQL por Analista.
                       </div>
                     )}
 
+                    {isTechnical && rule.sqlQueryConsistent && (
+                      <div className="space-y-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">SQL consistencias</p>
+                        <div className="rounded bg-slate-900 p-4 font-mono text-xs text-slate-100 overflow-x-auto">
+                          <code>{rule.sqlQueryConsistent}</code>
+                        </div>
+                      </div>
+                    )}
+
+                    {!rule.sqlQueryConsistent && isTechnical && (
+                      <div className="p-3 bg-slate-50 text-slate-700 text-xs rounded border border-slate-200 flex items-center gap-2">
+                        <Clock className="h-4 w-4" /> Sin SQL de consistencias configurado.
+                      </div>
+                    )}
                     <div className="space-y-2">
                       <p className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">
                         <Zap className="h-3 w-3" /> Acciones Vinculadas:
@@ -555,16 +601,27 @@ export default function ScenarioDetailPage() {
                     {canModify && (
                       <div className="flex gap-2 pt-2">
                         {isTechnical && (
-  <Button
-    size="sm"
-    variant="outline"
-    onClick={() => handleExecuteRule(rule.id)}
-    disabled={executingRuleId === rule.id}
-  >
-    <Play className="mr-2 h-3 w-3" />
-    {executingRuleId === rule.id ? 'Ejecutando...' : 'Ejecutar Prueba'}
-  </Button>
-)}
+                          <>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleExecuteRule(rule.id, "inconsistent")}
+                              disabled={executingRuleKey === `${rule.id}:inconsistent` || !rule.sqlQuery}
+                            >
+                              <Play className="mr-2 h-3 w-3" />
+                              {executingRuleKey === `${rule.id}:inconsistent` ? 'Ejecutando...' : 'Ejecutar Inconsistencias'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleExecuteRule(rule.id, "consistent")}
+                              disabled={executingRuleKey === `${rule.id}:consistent` || !rule.sqlQueryConsistent}
+                            >
+                              <Play className="mr-2 h-3 w-3" />
+                              {executingRuleKey === `${rule.id}:consistent` ? 'Ejecutando...' : 'Ejecutar Consistencias'}
+                            </Button>
+                          </>
+                        )}
                         <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={async () => {
                           if (scenario.rules.length <= 1) {
                             setCannotUnlinkOpen(true)
@@ -593,90 +650,172 @@ export default function ScenarioDetailPage() {
             </TabsContent>
 
             <TabsContent value="actions" className="mt-4 space-y-4">
-              {scenario.actions.length > 0 ? scenario.actions.map(action => {
-                const associatedRule = scenario.rules.find(r => r.id === action.ruleId)
-                return (
-                  <Card key={action.id}>
-                    <CardContent className="flex items-center justify-between p-6">
-                      <div className="flex items-start gap-4">
-                        <div className={`mt-1 h-5 w-5 rounded-full ${action.status === 'Executed' ? 'text-emerald-500' : 'text-amber-500'}`}>
-                          {action.status === 'Executed' ? <CheckCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
-                        </div>
-                        <div>
-                          <p className="font-medium">{action.description}</p>
-                          <div className="flex gap-2 items-center mt-1">
-                            {associatedRule && (
-                              <Badge variant="outline" className="text-[9px] bg-accent/5">
-                                Originado por: {associatedRule.name}
-                              </Badge>
-                            )}
-                            <p className="text-[10px] text-muted-foreground">Responsable: {action.responsibleId || 'Sin asignar'}</p>
+              {scenario.rules.length > 0 ? scenario.rules.map(rule => (
+                <Card key={rule.id}>
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="text-base text-primary">{rule.name}</CardTitle>
+                      <Badge variant="outline">{rule.dimension}</Badge>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {rule.actions.length > 0 ? (
+                      rule.actions.map((action, idx) => (
+                        <div key={idx} className="flex items-start gap-3 p-3 bg-muted/30 rounded-md border">
+                          <div className={`mt-0.5 h-2 w-2 rounded-full ${action.type === 'Preventive' ? 'bg-blue-500' :
+                            action.type === 'Massive' ? 'bg-purple-500' : 'bg-orange-500'
+                            }`} />
+                          <div className="flex-1 space-y-1">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-sm">{action.description}</span>
+                              <Badge variant="secondary" className="text-[10px]">{action.type}</Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Acción definida para la regla.
+                            </p>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button size="sm" variant={action.status === 'Executed' ? 'outline' : 'default'} disabled={!canModify && action.status === 'Pending'}>
-                          {action.status === 'Executed' ? 'Ver Evidencia' : 'Completar Acción'}
-                        </Button>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )
-              }) : (
+                      ))
+                    ) : (
+                      <div className="text-sm text-muted-foreground italic">No hay acciones definidas para esta regla.</div>
+                    )}
+                  </CardContent>
+                </Card>
+              )) : (
                 <div className="flex h-40 flex-col items-center justify-center rounded-lg border border-dashed text-muted-foreground">
-                  <p>Sin acciones registradas.</p>
+                  <p>No hay reglas vinculadas para mostrar acciones.</p>
                 </div>
               )}
             </TabsContent>
 
-            <TabsContent value="docs" className="mt-4">
+            <TabsContent value="docs" className="mt-4 space-y-4">
               <Card>
-                <CardContent className="p-6">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold">Archivos Adjuntos</h4>
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="file"
-                        onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                        className="text-sm"
-                      />
-                      <Button size="sm" variant="outline" onClick={handleUpload} disabled={!uploadFile || isUploading}>
-                        <Upload className="mr-2 h-4 w-4" />
-                        {isUploading ? "Subiendo..." : "Subir"}
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="space-y-2">
-                    {scenarioApi?.archive ? (
-                      <div className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50">
-                        <div className="flex items-center gap-2">
-                          <FileCode className="h-4 w-4 text-blue-500" />
-                          <span>Archivo actual</span>
-                          {scenarioApi.archive_uploaded_at && (
-                            <span className="text-[10px] text-muted-foreground">
-                              {new Date(scenarioApi.archive_uploaded_at).toLocaleString()}
-                            </span>
-                          )}
-                        </div>
-                        <Button size="icon" variant="ghost" className="h-8 w-8" asChild>
-                          <a href={scenarioApi.archive} target="_blank" rel="noreferrer">
-                            <ExternalLink className="h-4 w-4" />
-                          </a>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-base">Gestión de Archivos</CardTitle>
+                    {canModify && (
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={uploadStatusId ? String(uploadStatusId) : ""}
+                          onValueChange={(v) => setUploadStatusId(Number(v))}
+                        >
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Etapa" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statuses.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <input
+                          type="file"
+                          id="file-upload"
+                          onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="file-upload"
+                          className="text-sm px-3 py-2 bg-secondary text-secondary-foreground rounded-md cursor-pointer hover:bg-secondary/80 flex items-center gap-2"
+                        >
+                          <Upload className="h-4 w-4" />
+                          {uploadFile ? uploadFile.name : "Seleccionar archivo"}
+                        </label>
+                        <Button size="sm" onClick={handleUpload} disabled={!uploadFile || isUploading || !uploadStatusId}>
+                          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Subir"}
                         </Button>
                       </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground">Sin archivo adjunto.</div>
                     )}
-                    {scenario.documents.map(doc => (
-                      <div key={doc.id} className="flex items-center justify-between rounded-md border p-3 text-sm hover:bg-muted/50">
-                        <div className="flex items-center gap-2">
-                          <FileCode className="h-4 w-4 text-blue-500" />
-                          <span>{doc.name}</span>
-                        </div>
-                        <Button size="icon" variant="ghost" className="h-8 w-8"><ExternalLink className="h-4 w-4" /></Button>
-                      </div>
-                    ))}
                   </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {statuses.map((status) => {
+                    const docs = groupedDocs[status.id] || []
+                    if (docs.length === 0) return null
+                    return (
+                      <div key={status.id} className="space-y-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2 text-muted-foreground uppercase tracking-wider">
+                          <div className="h-2 w-2 rounded-full bg-primary" />
+                          Etapa: {status.name}
+                        </h4>
+                        <div className="space-y-2">
+                          {docs.map((doc) => (
+                            <div key={doc.id} className="rounded-md border p-3 flex items-center justify-between bg-muted/20">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 bg-blue-100 text-blue-700 rounded-lg">
+                                  <FileCode className="h-5 w-5" />
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium">Documento de Evidencia</p>
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Subido el {new Date(doc.uploaded_at).toLocaleString()}
+                                  </p>
+                                  {doc.is_validated && (
+                                    <p className="text-[10px] text-emerald-600">
+                                      Validado por {doc.validated_by_email || "Coordinador"}{" "}
+                                      {doc.validated_at ? `· ${new Date(doc.validated_at).toLocaleString()}` : ""}
+                                    </p>
+                                  )}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button variant="ghost" size="sm" asChild>
+                                  <a href={doc.file || '#'} target="_blank" rel="noreferrer" className="gap-2">
+                                    <ExternalLink className="h-4 w-4" /> Abrir
+                                  </a>
+                                </Button>
+                                {isCoordinator && !doc.is_validated && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={async () => {
+                                      try {
+                                        await scenarioService.validateDocument(doc.id)
+                                        const refreshed = await scenarioService.getDocuments(scenarioApi?.id || '')
+                                        setDocuments(refreshed)
+                                      } catch (err) {
+                                        console.error(err)
+                                        toast({ variant: "destructive", title: "Error", description: "No se pudo validar." })
+                                      }
+                                    }}
+                                  >
+                                    Validar
+                                  </Button>
+                                )}
+                                {(isCoordinator || isAssignedToMe) && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={async () => {
+                                      try {
+                                        await scenarioService.deleteDocument(doc.id)
+                                        const refreshed = await scenarioService.getDocuments(scenarioApi?.id || '')
+                                        setDocuments(refreshed)
+                                      } catch (err) {
+                                        console.error(err)
+                                        toast({ variant: "destructive", title: "Error", description: "No se pudo eliminar." })
+                                      }
+                                    }}
+                                  >
+                                    Eliminar
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )
+                  })}
+
+                  {documents.length === 0 && (
+                    <div className="text-center py-8 text-muted-foreground text-sm border-2 border-dashed rounded-lg">
+                      No hay archivos adjuntos en ninguna etapa.
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </TabsContent>
@@ -693,7 +832,12 @@ export default function ScenarioDetailPage() {
                 <Button
                   className="w-full bg-accent hover:bg-accent/90"
                   onClick={handleAdvance}
-                  disabled={isAdvancing || !canAdvance}
+                  disabled={
+                    isAdvancing ||
+                    !canAdvance ||
+                    (isCoordinator && (scenario.status === 'Assigned' || scenario.status === 'Analysis' || scenario.status === 'Prioritization' || scenario.status === 'Action')) ||
+                    (isAnalyst && scenario.status === 'Evaluation')
+                  }
                 >
                   {isAdvancing ? "Avanzando..." : "Avanzar Etapa"}
                 </Button>
@@ -792,6 +936,8 @@ export default function ScenarioDetailPage() {
     </div>
   )
 }
+
+
 
 
 

@@ -150,7 +150,7 @@ export default function NewScenarioPage() {
                                 </SelectTrigger>
                                 <SelectContent>
                                     {processes.map((p) => (
-                                        <SelectItem key={p.id} value={String(p.id)}>
+                                        <SelectItem key={p.id} value={String(p.code)}>
                                             {p.name}
                                         </SelectItem>
                                     ))}

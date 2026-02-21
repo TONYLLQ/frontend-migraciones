@@ -35,20 +35,30 @@ export function LoginForm({ onSuccess }: Props) {
             const res = await loginApi(values);
 
             const token = res.token ?? res.access ?? res.access_token;
+            const refreshToken = res.refresh ?? res.refresh_token;
+
             if (!token) {
                 setServerError("La API no devolvió token. Revisa el response del login.");
                 return;
             }
 
             setAuthToken(token);
+            if (refreshToken) {
+                // Must import setRefreshToken
+                const { setRefreshToken } = await import('@/lib/auth');
+                setRefreshToken(refreshToken);
+            }
+
             onSuccess();
-        } catch (err: any) {
+        } catch (err: unknown) {
             // Axios error handling is a bit different if using the service
             // But since we catch generic error here
             console.error(err);
-            if (err.response) {
-                const status = err.response.status;
-                const data = err.response.data;
+            if (err instanceof Error && 'response' in err) {
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                const axiosErr = err as any;
+                const status = axiosErr.response?.status;
+                const data = axiosErr.response?.data;
                 if (status === 400 || status === 401) {
                     setServerError(data?.detail || data?.message || "Email o contraseña incorrectos.");
                 } else {
