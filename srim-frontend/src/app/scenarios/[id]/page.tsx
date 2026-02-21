@@ -319,9 +319,10 @@ export default function ScenarioDetailPage() {
     try {
       const execution = await executionsService.execute(ruleId, scenarioApi.id, mode)
       toast({ title: 'Ejecucion iniciada', description: 'ID: ' + execution.id })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      const detail = err?.response?.data?.detail
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail
       toast({ variant: 'destructive', title: 'Error', description: detail || 'No se pudo ejecutar la regla.' })
     } finally {
       setExecutingRuleKey(null)
@@ -342,9 +343,10 @@ export default function ScenarioDetailPage() {
       setScenario(mapScenario(refreshed, rulesCatalog))
       setIsLinkingOpen(false)
       toast({ title: "Regla Vinculada", description: `Se ha añadido '${rule.name}'.` })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      const detail = err?.response?.data?.detail
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail
       toast({ variant: "destructive", title: "Error", description: detail || "No se pudo vincular la regla." })
     }
   }
@@ -389,9 +391,10 @@ export default function ScenarioDetailPage() {
       setScenarioApi(refreshed)
       setScenario(mapScenario(refreshed, rulesCatalog))
       toast({ title: "Etapa actualizada" })
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err)
-      const detail = err?.response?.data?.detail
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const detail = (err as any)?.response?.data?.detail
       toast({ variant: "destructive", title: "No se pudo avanzar", description: detail || "Revisa las reglas de transición." })
     } finally {
       setIsAdvancing(false)
@@ -575,7 +578,7 @@ export default function ScenarioDetailPage() {
                         <Clock className="h-4 w-4" /> Sin SQL de consistencias configurado.
                       </div>
                     )}
-<div className="space-y-2">
+                    <div className="space-y-2">
                       <p className="text-xs font-bold text-muted-foreground uppercase flex items-center gap-1">
                         <Zap className="h-3 w-3" /> Acciones Vinculadas:
                       </p>
@@ -598,7 +601,7 @@ export default function ScenarioDetailPage() {
                     {canModify && (
                       <div className="flex gap-2 pt-2">
                         {isTechnical && (
-                                                    <>
+                          <>
                             <Button
                               size="sm"
                               variant="outline"
@@ -690,39 +693,41 @@ export default function ScenarioDetailPage() {
                 <CardHeader>
                   <div className="flex items-center justify-between">
                     <CardTitle className="text-base">Gestión de Archivos</CardTitle>
-                    <div className="flex items-center gap-2">
-                      <Select
-                        value={uploadStatusId ? String(uploadStatusId) : ""}
-                        onValueChange={(v) => setUploadStatusId(Number(v))}
-                      >
-                        <SelectTrigger className="w-[180px]">
-                          <SelectValue placeholder="Etapa" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {statuses.map((s) => (
-                            <SelectItem key={s.id} value={String(s.id)}>
-                              {s.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <input
-                        type="file"
-                        id="file-upload"
-                        onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
-                        className="hidden"
-                      />
-                      <label
-                        htmlFor="file-upload"
-                        className="text-sm px-3 py-2 bg-secondary text-secondary-foreground rounded-md cursor-pointer hover:bg-secondary/80 flex items-center gap-2"
-                      >
-                        <Upload className="h-4 w-4" />
-                        {uploadFile ? uploadFile.name : "Seleccionar archivo"}
-                      </label>
-                      <Button size="sm" onClick={handleUpload} disabled={!uploadFile || isUploading || !uploadStatusId}>
-                        {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Subir"}
-                      </Button>
-                    </div>
+                    {canModify && (
+                      <div className="flex items-center gap-2">
+                        <Select
+                          value={uploadStatusId ? String(uploadStatusId) : ""}
+                          onValueChange={(v) => setUploadStatusId(Number(v))}
+                        >
+                          <SelectTrigger className="w-[180px]">
+                            <SelectValue placeholder="Etapa" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {statuses.map((s) => (
+                              <SelectItem key={s.id} value={String(s.id)}>
+                                {s.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <input
+                          type="file"
+                          id="file-upload"
+                          onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="file-upload"
+                          className="text-sm px-3 py-2 bg-secondary text-secondary-foreground rounded-md cursor-pointer hover:bg-secondary/80 flex items-center gap-2"
+                        >
+                          <Upload className="h-4 w-4" />
+                          {uploadFile ? uploadFile.name : "Seleccionar archivo"}
+                        </label>
+                        <Button size="sm" onClick={handleUpload} disabled={!uploadFile || isUploading || !uploadStatusId}>
+                          {isUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Subir"}
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
@@ -827,7 +832,12 @@ export default function ScenarioDetailPage() {
                 <Button
                   className="w-full bg-accent hover:bg-accent/90"
                   onClick={handleAdvance}
-                  disabled={isAdvancing || !canAdvance}
+                  disabled={
+                    isAdvancing ||
+                    !canAdvance ||
+                    (isCoordinator && (scenario.status === 'Assigned' || scenario.status === 'Analysis' || scenario.status === 'Prioritization' || scenario.status === 'Action')) ||
+                    (isAnalyst && scenario.status === 'Evaluation')
+                  }
                 >
                   {isAdvancing ? "Avanzando..." : "Avanzar Etapa"}
                 </Button>

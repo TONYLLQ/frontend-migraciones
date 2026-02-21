@@ -13,6 +13,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
@@ -504,29 +512,29 @@ export default function RulesPage() {
                             );
                           })
                           .map((field) => {
-                        const table = tables.find((t) => t.id === field.table);
-                        const tableLabel = table ? `${table.schema ? `${table.schema}.` : ''}${table.name}` : `Tabla ${field.table}`;
-                        const checked = formData.fieldIds.includes(field.id);
-                        return (
-                          <label key={field.id} className="flex items-center gap-2 text-sm">
-                            <Checkbox
-                              checked={checked}
-                              onCheckedChange={(value) => {
-                                const isChecked = value === true;
-                                setFormData((prev) => ({
-                                  ...prev,
-                                  fieldIds: isChecked
-                                    ? [...prev.fieldIds, field.id]
-                                    : prev.fieldIds.filter((id) => id !== field.id),
-                                }));
-                              }}
-                            />
-                            <span className="text-sm">
-                              {tableLabel} · {field.name}
-                            </span>
-                          </label>
-                        );
-                      })}
+                            const table = tables.find((t) => t.id === field.table);
+                            const tableLabel = table ? `${table.schema ? `${table.schema}.` : ''}${table.name}` : `Tabla ${field.table}`;
+                            const checked = formData.fieldIds.includes(field.id);
+                            return (
+                              <label key={field.id} className="flex items-center gap-2 text-sm">
+                                <Checkbox
+                                  checked={checked}
+                                  onCheckedChange={(value) => {
+                                    const isChecked = value === true;
+                                    setFormData((prev) => ({
+                                      ...prev,
+                                      fieldIds: isChecked
+                                        ? [...prev.fieldIds, field.id]
+                                        : prev.fieldIds.filter((id) => id !== field.id),
+                                    }));
+                                  }}
+                                />
+                                <span className="text-sm">
+                                  {tableLabel} · {field.name}
+                                </span>
+                              </label>
+                            );
+                          })}
                       </div>
                     </ScrollArea>
                   </div>
@@ -591,28 +599,30 @@ export default function RulesPage() {
       </Dialog>
 
       <Dialog open={isSqlDialogOpen} onOpenChange={setIsSqlDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
+        <DialogContent className="w-[95vw] max-w-3xl max-h-[90vh] flex flex-col p-4 md:p-6">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Consulta SQL de Validación</DialogTitle>
             <DialogDescription>
               Regla: {viewingSqlRule?.name}
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label>SQL Query</Label>
-              <div className="rounded-md bg-muted p-4 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
-                {viewingSqlRule?.sql_query || "-- No hay consulta SQL definida --"}
+          <div className="flex-1 overflow-y-auto min-h-0 pr-2">
+            <div className="grid gap-6 py-2">
+              <div className="grid gap-2">
+                <Label>SQL Query</Label>
+                <div className="rounded-md bg-muted dark:bg-muted p-4 font-mono text-[11px] md:text-xs overflow-x-auto whitespace-pre-wrap border break-all md:break-words">
+                  {viewingSqlRule?.sql_query || "-- No hay consulta SQL definida --"}
+                </div>
               </div>
-            </div>
-            <div className="grid gap-2">
-              <Label>SQL Consistencia</Label>
-              <div className="rounded-md bg-muted p-4 font-mono text-xs overflow-x-auto whitespace-pre-wrap">
-                {viewingSqlRule?.sql_query_consistent || "-- No hay consulta SQL de consistencia --"}
+              <div className="grid gap-2">
+                <Label>SQL Consistencia</Label>
+                <div className="rounded-md bg-muted dark:bg-muted p-4 font-mono text-[11px] md:text-xs overflow-x-auto whitespace-pre-wrap border break-all md:break-words">
+                  {viewingSqlRule?.sql_query_consistent || "-- No hay consulta SQL de consistencia --"}
+                </div>
               </div>
             </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="shrink-0 pt-2">
             <Button onClick={() => setIsSqlDialogOpen(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
@@ -663,42 +673,70 @@ export default function RulesPage() {
       )}
 
       {!isLoading && !loadError && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredRules.map((rule, index) => (
-            <Card key={rule.id} className="hover:border-accent transition-colors flex flex-col">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between items-start">
-                  <Badge variant="outline" className="text-[10px] font-mono">{getRuleLabel(rule, index)}</Badge>
-                  {rule.is_active ? (
-                    <Badge className="bg-emerald-100 text-emerald-800 border-none"><CheckCircle2 className="mr-1 h-3 w-3" /> Activa</Badge>
-                  ) : (
-                    <Badge className="bg-amber-100 text-amber-800 border-none">Inactiva</Badge>
-                  )}
-                </div>
-                <CardTitle className="text-lg mt-2">{rule.name}</CardTitle>
-              </CardHeader>
-              <CardContent className="flex-1 flex flex-col">
-                <div className="mt-2 space-y-1">
-                  <p className="text-[10px] font-bold text-muted-foreground uppercase">Acciones ({rule.actions.length})</p>
-                </div>
-                <div className="flex items-center justify-between text-xs mt-auto pt-4">
-                  <span className="font-semibold text-muted-foreground uppercase tracking-tight">{rule.dimension_name}</span>
-                  <div className="flex gap-1">
-                    {canEdit && (
-                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleOpenEdit(rule)}>
-                        <Edit2 className="mr-2 h-3 w-3" /> Editar
-                      </Button>
-                    )}
-                    {isTechnical && (
-                      <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleViewSql(rule)}>
-                        <Code2 className="mr-2 h-3 w-3" /> SQL
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+        <div className="rounded-md border bg-card">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[100px]">Código</TableHead>
+                <TableHead>Nombre de la Regla</TableHead>
+                <TableHead>Dimensión</TableHead>
+                <TableHead>Cant. Acciones</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead className="text-right">Operaciones</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredRules.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="h-24 text-center">
+                    No se encontraron reglas.
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredRules.map((rule, index) => (
+                  <TableRow key={rule.id}>
+                    <TableCell className="font-mono text-[10px]">
+                      <Badge variant="outline">{getRuleLabel(rule, index)}</Badge>
+                    </TableCell>
+                    <TableCell className="font-medium text-sm">{rule.name}</TableCell>
+                    <TableCell>
+                      <span className="font-semibold text-muted-foreground text-xs uppercase tracking-tight">
+                        {rule.dimension_name}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground font-medium">
+                      {rule.actions.length} acciones
+                    </TableCell>
+                    <TableCell>
+                      {rule.is_active ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 border-none font-normal text-[10px] py-0 h-5">
+                          <CheckCircle2 className="mr-1 h-3 w-3" /> Activa
+                        </Badge>
+                      ) : (
+                        <Badge className="bg-amber-100 text-amber-800 border-none font-normal text-[10px] py-0 h-5">
+                          Inactiva
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1">
+                        {canEdit && (
+                          <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleOpenEdit(rule)}>
+                            <Edit2 className="mr-2 h-3 w-3" /> Editar
+                          </Button>
+                        )}
+                        {isTechnical && (
+                          <Button variant="ghost" size="sm" className="h-8 px-2" onClick={() => handleViewSql(rule)}>
+                            <Code2 className="mr-2 h-3 w-3" /> SQL
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

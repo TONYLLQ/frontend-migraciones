@@ -502,14 +502,16 @@ export default function ScenariosPage() {
                                                             <Eye className="h-4 w-4" /> Ver Detalle
                                                         </Link>
                                                     </DropdownMenuItem>
-                                                    <DropdownMenuItem
-                                                        className="flex items-center gap-2"
-                                                        onClick={() => openAssign(s)}
-                                                        disabled={Boolean(s.analyst)}
-                                                    >
-                                                        <UserCog className="h-4 w-4" />
-                                                        {s.analyst ? "Asignado" : "Asignar"}
-                                                    </DropdownMenuItem>
+                                                    {isCoordinator && (
+                                                        <DropdownMenuItem
+                                                            className="flex items-center gap-2"
+                                                            onClick={() => openAssign(s)}
+                                                            disabled={Boolean(s.analyst)}
+                                                        >
+                                                            <UserCog className="h-4 w-4" />
+                                                            {s.analyst ? "Asignado" : "Asignar"}
+                                                        </DropdownMenuItem>
+                                                    )}
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
                                         </td>
